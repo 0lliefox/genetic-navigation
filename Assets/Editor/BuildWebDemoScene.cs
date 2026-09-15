@@ -1,5 +1,7 @@
 using System.Linq;
 using UnityEditor;
+using UnityEngine.UI;
+using UnityEngine.Events;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 
@@ -304,7 +306,69 @@ public static class BuildWebDemoScene
             Object.DestroyImmediate(manager.gameObject);
         }
 
+        BuildModeButtons(playback);
+
         Debug.Log("[WebDemo] converted to recorded playback; live simulation removed");
+    }
+
+    /// <summary>
+    /// Two buttons to switch between watching the run improve and watching the
+    /// best generation on a loop. Built in code because the scene is generated.
+    /// </summary>
+    private static void BuildModeButtons(RecordingPlayback playback)
+    {
+        var canvas = Object.FindFirstObjectByType<Canvas>();
+        if (canvas == null)
+        {
+            Debug.LogWarning("[WebDemo] no Canvas; skipping mode buttons.");
+            return;
+        }
+
+        MakeButton(canvas.transform, "Watch it learn", new Vector2(24f, 24f),
+                   () => playback.ShowProgression());
+        MakeButton(canvas.transform, "Best generation", new Vector2(214f, 24f),
+                   () => playback.ShowBestGeneration());
+    }
+
+    private static void MakeButton(Transform parent, string label, Vector2 position, UnityAction onClick)
+    {
+        var go = new GameObject(label, typeof(RectTransform), typeof(CanvasRenderer),
+                                typeof(Image), typeof(Button));
+        go.transform.SetParent(parent, false);
+
+        var rect = go.GetComponent<RectTransform>();
+        rect.anchorMin = new Vector2(0f, 0f);   // bottom left, clear of the readout
+        rect.anchorMax = new Vector2(0f, 0f);
+        rect.pivot = new Vector2(0f, 0f);
+        rect.anchoredPosition = position;
+        rect.sizeDelta = new Vector2(180f, 44f);
+
+        var image = go.GetComponent<Image>();
+        image.color = new Color(0f, 0f, 0f, 0.55f);
+
+        var button = go.GetComponent<Button>();
+        var colours = button.colors;
+        colours.highlightedColor = new Color(1f, 1f, 1f, 0.35f);
+        colours.pressedColor = new Color(1f, 1f, 1f, 0.5f);
+        button.colors = colours;
+
+        // Persistent, so the wiring survives into the built scene rather than
+        // being a runtime-only listener that a scene save would not capture.
+        UnityEditor.Events.UnityEventTools.AddPersistentListener(button.onClick, onClick);
+
+        var textGo = new GameObject("Label", typeof(RectTransform));
+        textGo.transform.SetParent(go.transform, false);
+        var text = textGo.AddComponent<TMPro.TextMeshProUGUI>();
+        text.text = label;
+        text.fontSize = 18f;
+        text.color = Color.white;
+        text.alignment = TMPro.TextAlignmentOptions.Center;
+
+        var textRect = textGo.GetComponent<RectTransform>();
+        textRect.anchorMin = Vector2.zero;
+        textRect.anchorMax = Vector2.one;
+        textRect.offsetMin = Vector2.zero;
+        textRect.offsetMax = Vector2.zero;
     }
 
     private static void AddToBuildSettings()

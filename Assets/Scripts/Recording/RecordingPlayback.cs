@@ -64,8 +64,12 @@ public class RecordingPlayback : MonoBehaviour
             return;
         }
 
-        currentGeneration = mode == Mode.SingleGeneration ? ResolveGenerationIndex() : 0;
         CreateAgents();
+
+        if (mode == Mode.SingleGeneration)
+        {
+            ShowBestGeneration();
+        }
     }
 
     private int ResolveGenerationIndex()
@@ -73,6 +77,50 @@ public class RecordingPlayback : MonoBehaviour
         int count = recording.Generations.Count;
         int index = generationIndex < 0 ? count + generationIndex : generationIndex;
         return Mathf.Clamp(index, 0, count - 1);
+    }
+
+    /// <summary>
+    /// The recorded generation that did best: most goals, and among equals the
+    /// highest fitness. Falls back to the last recorded generation, which is the
+    /// most evolved, when nothing ever reached a goal.
+    /// </summary>
+    private int BestGenerationIndex()
+    {
+        int best = recording.Generations.Count - 1;
+
+        for (int i = 0; i < recording.Generations.Count; i++)
+        {
+            TrainingRecording.Generation g = recording.Generations[i];
+            TrainingRecording.Generation b = recording.Generations[best];
+
+            if (g.GoalsReached > b.GoalsReached ||
+                (g.GoalsReached == b.GoalsReached && g.BestFitness > b.BestFitness))
+            {
+                best = i;
+            }
+        }
+
+        return best;
+    }
+
+    /// <summary>Step through the whole run, showing the population improve.</summary>
+    public void ShowProgression()
+    {
+        if (recording == null) return;
+        mode = Mode.Progression;
+        currentGeneration = 0;
+        frameCursor = 0f;
+        generationTimer = 0f;
+    }
+
+    /// <summary>Loop the generation that did best, so it can be watched properly.</summary>
+    public void ShowBestGeneration()
+    {
+        if (recording == null) return;
+        mode = Mode.SingleGeneration;
+        currentGeneration = BestGenerationIndex();
+        frameCursor = 0f;
+        generationTimer = 0f;
     }
 
     private void CreateAgents()
