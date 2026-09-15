@@ -336,6 +336,43 @@ public class NeuralNetwork : IComparable<NeuralNetwork>
         return total;
     }
 
+    /// <summary>
+    /// Uniform crossover. Each bias and weight is taken from one parent or the
+    /// other with equal probability, writing into <paramref name="child"/>.
+    ///
+    /// Without this the algorithm only ever copies a single parent and perturbs
+    /// it, which is a hill climb rather than a genetic algorithm: good partial
+    /// solutions found by different individuals can never be combined.
+    /// </summary>
+    public static NeuralNetwork Crossover(NeuralNetwork a, NeuralNetwork b, NeuralNetwork child)
+    {
+        for (int i = 0; i < child.biases.Length; i++)
+        {
+            for (int j = 0; j < child.biases[i].Length; j++)
+            {
+                child.biases[i][j] = UnityEngine.Random.value < 0.5f
+                    ? a.biases[i][j]
+                    : b.biases[i][j];
+            }
+        }
+
+        for (int i = 0; i < child.weights.Length; i++)
+        {
+            for (int j = 0; j < child.weights[i].Length; j++)
+            {
+                for (int k = 0; k < child.weights[i][j].Length; k++)
+                {
+                    child.weights[i][j][k] = UnityEngine.Random.value < 0.5f
+                        ? a.weights[i][j][k]
+                        : b.weights[i][j][k];
+                }
+            }
+        }
+
+        child.fitness = 0f;
+        return child;
+    }
+
     public void Load(string path)//this loads the biases and weights from within a file into the neural network.
     {
 #if UNITY_EDITOR

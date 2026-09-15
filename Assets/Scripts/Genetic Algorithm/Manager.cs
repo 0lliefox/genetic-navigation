@@ -33,6 +33,10 @@ public class Manager : MonoBehaviour
     [SerializeField] private int CheckMutation = 10;
     [SerializeField] private int CheckMutationCounter = 0;
     [SerializeField] private bool eliteBased = false;
+    [SerializeField, Tooltip("Breed each new individual from two parents. Without this the " +
+        "algorithm only copies and mutates one parent, which is a hill climb rather than a " +
+        "genetic algorithm. Turn off to reproduce the original behaviour.")]
+    private bool useCrossover = true;
 
     private int currentGeneration = 0;
     private float previousAverageFitness = 0f;
@@ -132,6 +136,10 @@ public class Manager : MonoBehaviour
             else if (args[i] == "-seed" && int.TryParse(args[i + 1], out int seed))
             {
                 runSeed = seed;
+            }
+            else if (args[i] == "-crossover")
+            {
+                useCrossover = args[i + 1] != "off";
             }
         }
 
@@ -399,6 +407,20 @@ public class Manager : MonoBehaviour
                 networks[i].Mutate(MutationChance, MutationStrength);
             }
         } 
+        else if (useCrossover)
+        {
+            // Breed the replaced half from two parents drawn out of the surviving
+            // half. Only indices below `size` are written and only those at or
+            // above it are read, so parents are never overwritten mid-loop.
+            for (int i = 0; i < size; i++)
+            {
+                NeuralNetwork parentA = SelectParent(size);
+                NeuralNetwork parentB = SelectParent(size);
+
+                networks[i] = NeuralNetwork.Crossover(parentA, parentB, new NeuralNetwork(layers, i));
+                networks[i].Mutate(MutationChance, MutationStrength);
+            }
+        }
         else
         {
             for (int i = 0; i < size; i++)
@@ -490,6 +512,17 @@ public class Manager : MonoBehaviour
             $"mean={networks.Average(n => n.fitness):G6} " +
             $"goals={numberOfGoals} distance={totalDistanceCovered:G6} " +
             $"non-finite={nonFinite}");
+    }
+
+    /// <summary>
+    /// Picks a parent from the surviving half by a two-way tournament, so fitter
+    /// individuals breed more often without the best one dominating outright.
+    /// </summary>
+    private NeuralNetwork SelectParent(int survivorsStart)
+    {
+        int a = Random.Range(survivorsStart, networks.Count);
+        int b = Random.Range(survivorsStart, networks.Count);
+        return networks[a].fitness >= networks[b].fitness ? networks[a] : networks[b];
     }
 
     private void Hypermutation()
