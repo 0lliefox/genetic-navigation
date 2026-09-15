@@ -7545,7 +7545,7 @@ MonoBehaviour:
   numberOfGoals: 0
   maximumFitness: 0
   breadcrumbs: 1
-  fitnessFunction: F6-RESETGOAL75timeframeRESETALL-100pop-ALLCELLS
+  fitnessFunction: F7-RESETGOAL75timeframeRESETALL-100pop-ALLCELLS
   resetOnGridCompletion: 0
   cellManager: {fileID: 112570290}
 --- !u!1001 &2017819768

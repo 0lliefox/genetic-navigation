@@ -109,5 +109,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   timeDelay: 1
-  delay: 5
+  removeDelay: 10
+  penaltyDelay: 0.5
   newBreadcrumb: 1
