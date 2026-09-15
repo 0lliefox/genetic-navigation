@@ -37,24 +37,30 @@ public class CheckPosition : MonoBehaviour
 
     private void FixedUpdate()
     {
-        bool updatePosition = false;
+        // The loop below used to run on every physics step regardless. The flag is
+        // off in the shipped scene, so it could never act on the result.
+        if (!shouldMoveOnVisitedCell || cellManager == null || cellManager.numberOfCellsVisited >= 100)
+        {
+            return;
+        }
+
+        // Move on once every cell the goal currently sits in has been visited, to
+        // push it towards unexplored parts of the city. An empty list means the
+        // goal is not on a cell, in which case it stays put.
+        if (currentCells.Count == 0)
+        {
+            return;
+        }
+
         foreach (Cell cell in currentCells)
         {
-            if (!cell.hasVisited)
+            if (cell == null || !cell.hasVisited)
             {
-                updatePosition = false;
-                break;
-            }
-            else
-            {
-                updatePosition = true;
+                return;
             }
         }
 
-        if (shouldMoveOnVisitedCell && updatePosition && cellManager.numberOfCellsVisited < 100)
-        {
-            SetGoalPosition();
-        }
+        SetGoalPosition();
     }
 
     private void SetGoalPosition()

@@ -1,9 +1,6 @@
 using System;
 using System.Collections;
-using System.Collections.Generic;
-using System.Linq;
 using System.Text.RegularExpressions;
-using System.Xml;
 using UnityEngine;
 using Random = UnityEngine.Random;
 
@@ -42,6 +39,14 @@ public class CarController : MonoBehaviour
     // An agent that has moved less than this has not meaningfully navigated
     // anywhere. Used only to stop the goal fitness dividing by zero.
     private const float MinimumTravelDistance = 1f;
+
+    // LayerMask.GetMask does a string lookup. It was being called twelve times per
+    // agent per physics step; the masks never change, so resolve them once.
+    private static readonly int SolidMask = LayerMask.GetMask("Goal", "Wall");
+    private static readonly int SolidAndBreadcrumbMask = LayerMask.GetMask("Goal", "Wall", "Breadcrumb");
+
+    // Reused rather than allocating a new List every physics step.
+    private readonly Vector3[] rayDirections = new Vector3[RayDirections];
 
     [Header("Environment")]
     private GameObject target;
@@ -261,68 +266,54 @@ public class CarController : MonoBehaviour
         //};
 
         // NSWE directions
-        List<Vector3> raycasts = new List<Vector3>()
+        Vector3 forward = transform.forward;
+        rayDirections[0] = Quaternion.Euler(0, -90f, 0) * forward;
+        rayDirections[1] = forward;
+        rayDirections[2] = Quaternion.Euler(0, 90f, 0) * forward;
+        rayDirections[3] = Quaternion.Euler(0, -180f, 0) * forward;
+
+        const float maxDistance = 50f;
+        Vector3 origin = transform.position;
+
+        for (int i = 0; i < RayDirections; i++)
         {
-            (Quaternion.Euler(0, -90f, 0) * transform.forward),
-            (transform.forward),
-            (Quaternion.Euler(0, 90f, 0) * transform.forward),
-            (Quaternion.Euler(0, -180f, 0) * transform.forward),
-        };
+            Ray ray = new Ray(origin, rayDirections[i]);
 
-        float maxDistance = 50;
+            // One cast serves both the wall and goal banks. These were two separate
+            // casts with byte-identical arguments, differing only in which tag they
+            // tested on the result, so the second was pure waste.
+            //
+            // Note the masks are deliberate, not incidental: a bank reports only when
+            // something of its own type is the *nearest* hit. That is what stops an
+            // agent seeing the goal through a wall.
+            float wall = 0f;
+            float goal = 0f;
+            if (Physics.Raycast(ray, out RaycastHit solidHit, maxDistance, SolidMask))
+            {
+                if (solidHit.transform.CompareTag("Wall"))
+                {
+                    wall = solidHit.distance;
+                    DrawSensorRay(ray.origin, solidHit.point, Color.red);
+                }
+                else if (solidHit.transform.CompareTag("Goal"))
+                {
+                    goal = solidHit.distance;
+                    DrawSensorRay(ray.origin, solidHit.point, Color.yellow);
+                }
+            }
+            sensors[WallSensorOffset + i] = wall;
+            sensors[GoalSensorOffset + i] = goal;
 
-        // The sensor offsets above assume this many rays; fail loudly rather than
-        // silently writing banks on top of each other if the list ever changes.
-        if (raycasts.Count != RayDirections)
-        {
-            Debug.LogError($"InputSensors expects {RayDirections} ray directions but got " +
-                           $"{raycasts.Count}; sensor layout constants are out of date.");
-            return;
-        }
-
-        // WALL 
-        for (int i = 0; i < raycasts.Count; i++) {
-            Ray r = new Ray(transform.position, raycasts[i]);
-            if (Physics.Raycast(r, out RaycastHit hit, maxDistance, LayerMask.GetMask("Goal", "Wall")) && hit.transform.CompareTag("Wall"))
+            // Breadcrumbs need their own cast, because walls and goals occlude them
+            // but breadcrumbs occlude nothing: a marker should not hide a wall.
+            float breadcrumb = 0f;
+            if (Physics.Raycast(ray, out RaycastHit anyHit, maxDistance, SolidAndBreadcrumbMask)
+                && anyHit.transform.CompareTag("Breadcrumb"))
             {
-                //sensors[i] = (maxDistance - hit.distance) / maxDistance;
-                sensors[WallSensorOffset + i] = hit.distance;
-                Debug.DrawLine(r.origin, hit.point, Color.red);
+                breadcrumb = anyHit.distance;
+                DrawSensorRay(ray.origin, anyHit.point, Color.blue);
             }
-            else
-            {
-                sensors[WallSensorOffset + i] = 0;
-            }
-        }
-
-        // GOAL
-        for (int i = 0; i < raycasts.Count; i++)
-        {
-            Ray r = new Ray(transform.position, raycasts[i]);
-            if (Physics.Raycast(r, out RaycastHit hit, maxDistance, LayerMask.GetMask("Goal", "Wall")) && hit.transform.CompareTag("Goal")) // Make sure it doesn't look through walls to see goal
-            {
-                sensors[GoalSensorOffset + i] = hit.distance; 
-                Debug.DrawLine(r.origin, hit.point, Color.yellow);
-            }
-            else
-            {
-                sensors[GoalSensorOffset + i] = 0;
-            }
-        }
-
-        // BREADCRUMBS
-        for (int i = 0; i < raycasts.Count; i++)
-        {
-            Ray r = new Ray(transform.position, raycasts[i]);
-            if (Physics.Raycast(r, out RaycastHit hit, maxDistance, LayerMask.GetMask("Goal", "Wall", "Breadcrumb")) && hit.transform.CompareTag("Breadcrumb"))
-            {
-                sensors[BreadcrumbSensorOffset + i] = hit.distance;
-                Debug.DrawLine(r.origin, hit.point, Color.blue);
-            }
-            else
-            {
-                sensors[BreadcrumbSensorOffset + i] = 0;
-            }
+            sensors[BreadcrumbSensorOffset + i] = breadcrumb;
         }
 
         // velocity
@@ -353,12 +344,38 @@ public class CarController : MonoBehaviour
         //sensors[raycasts.Count + 12] = transform.right.z;
     }
 
+
+    [System.Diagnostics.Conditional("UNITY_EDITOR")]
+    private static void DrawSensorRay(Vector3 from, Vector3 to, Color colour)
+    {
+        Debug.DrawLine(from, to, colour);
+    }
+
+    /// <summary>
+    /// Index of the largest network output, i.e. the chosen action.
+    ///
+    /// Replaces act.ToList().IndexOf(act.Max()), which allocated a List and walked
+    /// the array twice, once per agent per physics step.
+    /// </summary>
+    private static int IndexOfLargest(float[] values)
+    {
+        int best = 0;
+        for (int i = 1; i < values.Length; i++)
+        {
+            if (values[i] > values[best])
+            {
+                best = i;
+            }
+        }
+        return best;
+    }
+
     public void MoveCar(float[] act)
     {
         var dirToGo = Vector3.zero;
         var rotateDir = Vector3.zero;
 
-        switch (act.ToList().IndexOf(act.Max()))
+        switch (IndexOfLargest(act))
         {
             case 0:
                 dirToGo = Vector3.zero;

@@ -1,5 +1,3 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
 public class Cell : MonoBehaviour
@@ -11,16 +9,35 @@ public class Cell : MonoBehaviour
     [SerializeField] private Material unvisitedMat;
     [SerializeField] private CellManager cellManager;
 
-    // Update is called once per frame
-    void Update()
+    private Renderer cellRenderer;
+    private bool appliedVisitedState;
+
+    private void Awake()
     {
-        if (hasVisited)
+        cellRenderer = GetComponent<Renderer>();
+        ApplyMaterial();
+    }
+
+    // This used to call GetComponent and reassign the material every frame for
+    // every cell in the city, a hundred of each per frame for no benefit. Now it
+    // only compares a bool, and still reacts if hasVisited is changed elsewhere.
+    private void Update()
+    {
+        if (hasVisited != appliedVisitedState)
         {
-            GetComponent<Renderer>().material = visitedMat;
+            ApplyMaterial();
         }
-        else
+    }
+
+    private void ApplyMaterial()
+    {
+        appliedVisitedState = hasVisited;
+
+        if (cellRenderer != null)
         {
-            GetComponent<Renderer>().material = unvisitedMat;
+            // sharedMaterial, not material: both states are shared assets and no
+            // per-cell properties are ever set, so instancing them is wasted memory.
+            cellRenderer.sharedMaterial = hasVisited ? visitedMat : unvisitedMat;
         }
     }
 
