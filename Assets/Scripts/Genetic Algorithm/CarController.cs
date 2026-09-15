@@ -7,7 +7,6 @@ using System.Xml;
 using UnityEngine;
 using Random = UnityEngine.Random;
 
-[RequireComponent(typeof(NeuralNetwork))]
 public class CarController : MonoBehaviour
 {
     [Header("Agent Controls")]

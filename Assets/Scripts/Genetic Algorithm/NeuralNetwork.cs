@@ -174,6 +174,7 @@ public class NeuralNetwork : IComparable<NeuralNetwork>
 
     public void Load(string path)//this loads the biases and weights from within a file into the neural network.
     {
+#if UNITY_EDITOR
         TextReader tr = new StreamReader(path);
         int NumberOfLines = (int)new FileInfo(path).Length;
         string[] ListLines = new string[NumberOfLines];
@@ -206,10 +207,14 @@ public class NeuralNetwork : IComparable<NeuralNetwork>
                 }
             }
         }
+#endif
     }
 
     public void Save(string path, int numberOfGoals)//this is used for saving the biases and weights within the network to a file.
     {
+        // Editor-only: `path` points into Assets/, which does not exist in a
+        // player build. Runtime weight loading goes through LoadFrom(string).
+#if UNITY_EDITOR
         File.Create(path).Close();
         StreamWriter writer = new StreamWriter(path, true);
 
@@ -234,5 +239,6 @@ public class NeuralNetwork : IComparable<NeuralNetwork>
         writer.WriteLine(fitness);
         writer.WriteLine(numberOfGoals);
         writer.Close();
+#endif
     }
 }

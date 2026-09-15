@@ -138,6 +138,9 @@ public class Manager : MonoBehaviour
             }
         }
 
+        // Editor-only: `path` is a project-relative Assets/ path, and no Assets
+        // folder exists in a player build. Runtime builds log the summary instead.
+#if UNITY_EDITOR
         File.Create(path).Close();
         StreamWriter writer = new StreamWriter(path, true);
         writer.WriteLine($"Distance covered: {totalDistanceCovered}");
@@ -151,7 +154,15 @@ public class Manager : MonoBehaviour
         writer.WriteLine($"No. of generations: {currentGeneration}");
         writer.WriteLine($"Time elapsed: {timeSinceStart}");
         writer.Close();
+
         UnityEditor.EditorApplication.isPlaying = false;
+#else
+        Debug.Log(
+            $"Run complete. Distance covered: {totalDistanceCovered}, " +
+            $"collisions: {numberOfCollisions}, cells visited: {numberOfCellsVisited}, " +
+            $"goals: {numberOfGoals}, generations: {currentGeneration}, " +
+            $"max fitness: {maximumFitness}, elapsed: {timeSinceStart}");
+#endif
         Application.Quit();
     }
 
