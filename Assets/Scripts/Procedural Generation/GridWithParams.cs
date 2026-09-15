@@ -33,6 +33,7 @@ public class GridWithParams : MonoBehaviour
 
     void Initialise()
     {
+        ApplyCommandLineOverrides();
         ClearAll();
 
         Random.InitState(parameters.randomSeed);
@@ -43,6 +44,27 @@ public class GridWithParams : MonoBehaviour
         // generate materials if needed
         if(parameters.proceduralMaterialsToGenerate > 0 && parameters.defaultMaterials.Length == 0)
             proceduralMaterials = MeshRendererExtensions.GetRandomMaterials(parameters.shaderName, parameters.proceduralMaterialsToGenerate);
+    }
+
+    /// <summary>
+    /// Lets the city be reconfigured for a headless run without editing the shared
+    /// ProceduralParam asset, which would otherwise persist the change on disk.
+    /// </summary>
+    private void ApplyCommandLineOverrides()
+    {
+        if (parameters == null)
+        {
+            return;
+        }
+
+        string[] args = System.Environment.GetCommandLineArgs();
+        for (int i = 0; i < args.Length - 1; i++)
+        {
+            if (args[i] == "-roadblocks" && int.TryParse(args[i + 1], out int count))
+            {
+                parameters.roadblockCount = Mathf.Max(0, count);
+            }
+        }
     }
 
     void Start() {

@@ -79,18 +79,30 @@ public class CheckPosition : MonoBehaviour
             return;
         }
 
-        int gridHeight = grid.parameters.height;
-        int gridWidth = grid.parameters.width;
-        Vector3 gridMargin = grid.parameters.marginBetweenShapes;
+        // Buildings sit on a lattice starting at the grid's own origin, spaced by
+        // shapeWidth * margin. Placing the goal halfway between two of them puts it
+        // in the middle of a road rather than inside a building.
+        //
+        // The original arithmetic worked in the goal's own local space and landed
+        // it 10 units from a building centre. Buildings reach 8 units from their
+        // centre and the goal reaches 10 from its own, so up to 8 units of the goal
+        // ended up buried in a building, despite the comment claiming this made it
+        // "always reachable".
+        float spacingX = grid.parameters.shapeWidth * grid.parameters.marginBetweenShapes.x;
+        float spacingZ = grid.parameters.shapeDepth * grid.parameters.marginBetweenShapes.z;
 
-        int randomX = Random.Range(-Mathf.FloorToInt(gridHeight / 2) + 1, gridHeight - Mathf.FloorToInt(gridHeight / 2));
-        int randomZ = Random.Range(-Mathf.FloorToInt(gridHeight / 2), gridWidth - Mathf.FloorToInt(gridHeight / 2));
+        // Gaps between buildings, so one fewer than the number of buildings.
+        int gapsX = Mathf.Max(1, grid.parameters.width - 1);
+        int gapsZ = Mathf.Max(1, grid.parameters.height - 1);
 
-        // Offset by one margin so the goal lands between buildings rather than
-        // inside one, which keeps it reachable whatever the roadblocks do.
-        transform.localPosition = new Vector3(
-            randomX * gridMargin.x * 2 - gridMargin.x,
-            transform.localScale.y / 2,
-            randomZ * gridMargin.z * 2 - gridMargin.z);
+        int gapX = Random.Range(0, gapsX);
+        int gapZ = Random.Range(0, gapsZ);
+
+        Vector3 origin = grid.transform.position;
+        transform.position = new Vector3(
+            origin.x + (gapX + 0.5f) * spacingX,
+            transform.position.y,
+            origin.z + (gapZ + 0.5f) * spacingZ);
     }
+
 }

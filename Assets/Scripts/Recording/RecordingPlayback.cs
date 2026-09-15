@@ -45,6 +45,9 @@ public class RecordingPlayback : MonoBehaviour
     private Transform[] agents;
     private int bestGenerationIndex;
     private int bestAgentIndex;
+    // The stretch of the generation in which the chosen agent is actually driving.
+    private int activeStartFrame;
+    private int activeEndFrame;
     private int currentGeneration;
     private float frameCursor;
 
@@ -164,13 +167,62 @@ public class RecordingPlayback : MonoBehaviour
             }
         }
 
+        FindActiveWindow();
+
         Debug.Log($"[Playback] best generation {recording.Generations[bestGenerationIndex].Number} " +
-                  $"with {bestGoals} goal(s), reached by agent {bestAgentIndex}");
+                  $"with {bestGoals} goal(s), reached by agent {bestAgentIndex}, " +
+                  $"driving between frames {activeStartFrame} and {activeEndFrame}");
 
         if (bestGoals <= 0)
         {
             Debug.LogWarning("[Playback] no recorded generation reaches a goal, so the single " +
                              "agent view has nothing to show. Record with success capture enabled.");
+        }
+    }
+
+    /// <summary>
+    /// Finds the stretch of the generation in which the chosen agent is moving.
+    ///
+    /// An agent that crashes stops where it is and the recording keeps it there for
+    /// the rest of the generation, which for the best agent is usually most of it.
+    /// Playing the whole thing meant staring at a stationary square for a minute,
+    /// so the single agent view loops only the part where it is driving.
+    /// </summary>
+    private void FindActiveWindow()
+    {
+        TrainingRecording.Generation g = recording.Generations[bestGenerationIndex];
+        activeStartFrame = 0;
+        activeEndFrame = g.Frames.Count - 1;
+
+        int first = -1;
+        int last = -1;
+
+        for (int i = 1; i < g.Frames.Count; i++)
+        {
+            if (bestAgentIndex >= g.Frames[i].Positions.Length)
+            {
+                break;
+            }
+
+            if (g.Frames[i].States[bestAgentIndex] == TrainingRecording.AgentState.Absent)
+            {
+                continue;
+            }
+
+            float step = Vector2.Distance(g.Frames[i].Positions[bestAgentIndex],
+                                          g.Frames[i - 1].Positions[bestAgentIndex]);
+            if (step > 0.05f)
+            {
+                if (first < 0) first = i - 1;
+                last = i;
+            }
+        }
+
+        if (first >= 0 && last > first)
+        {
+            // A little air either side so it does not start and stop abruptly.
+            activeStartFrame = Mathf.Max(0, first - 5);
+            activeEndFrame = Mathf.Min(g.Frames.Count - 1, last + 10);
         }
     }
 
@@ -194,7 +246,7 @@ public class RecordingPlayback : MonoBehaviour
         if (recording == null) return;
         mode = Mode.SingleGeneration;
         currentGeneration = bestGenerationIndex;
-        frameCursor = 0f;
+        frameCursor = activeStartFrame;
     }
 
     private void CreateAgents()
@@ -240,15 +292,19 @@ public class RecordingPlayback : MonoBehaviour
         // that moved on after a few seconds, which only ever showed the opening of
         // a generation: that is the stretch where agents are still spawning, so
         // most of the population had not appeared yet and the city looked empty.
-        if (frameCursor >= generation.Frames.Count - 1)
+        if (mode == Mode.SingleGeneration)
+        {
+            // Loop just the driving stretch.
+            if (frameCursor >= activeEndFrame)
+            {
+                frameCursor = activeStartFrame;
+            }
+        }
+        else if (frameCursor >= generation.Frames.Count - 1)
         {
             frameCursor = 0f;
-
-            if (mode == Mode.Progression)
-            {
-                currentGeneration = (currentGeneration + 1) % recording.Generations.Count;
-                generation = recording.Generations[currentGeneration];
-            }
+            currentGeneration = (currentGeneration + 1) % recording.Generations.Count;
+            generation = recording.Generations[currentGeneration];
         }
 
         ApplyFrame(generation);

@@ -55,7 +55,10 @@ public class Manager : MonoBehaviour
     public int resetStepCount = 25000;
 
     [Header("Save Values")]
-    public float totalDistanceCovered = 0f;
+    // double, not float: a float stops being able to add small values to a large
+    // running total at 2^24, and long runs pass that. The reported distance simply
+    // stopped increasing at 16,777,216 units.
+    public double totalDistanceCovered = 0d;
     public int numberOfCollisions = 0; // Number of collisions overall
     public int numberOfGoals = 0; // Number of goals reached
     public float maximumFitness = 0f;
