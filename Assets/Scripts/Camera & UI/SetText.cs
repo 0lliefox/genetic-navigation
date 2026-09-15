@@ -27,15 +27,17 @@ public class SetText : MonoBehaviour
         }
         nextRefreshTime = Time.unscaledTime + refreshInterval;
 
-        string heading = progression
-            ? "<b><size=130%>Learning to navigate</size></b>"
-            : "<b><size=130%>Best generation</size></b>";
-
-        string text =
-            $"{heading}\r\n\r\n" +
-            $"<b>Generation:</b> {generation}\r\n" +
-            $"<b>Goals reached:</b> {goalsReached}\r\n" +
-            $"<b>Best fitness:</b> {bestFitness:G4}\r\n";
+        // Goals here are the ones reached during this generation, not the running
+        // total for the whole run. The total only climbs, so showing it made the
+        // readout claim successes the viewer never sees.
+        string text = progression
+            ? $"<b><size=130%>Learning to navigate</size></b>\r\n\r\n" +
+              $"<b>Generation:</b> {generation}\r\n" +
+              $"<b>Goals this generation:</b> {goalsReached}\r\n"
+            : $"<b><size=130%>Best agent</size></b>\r\n\r\n" +
+              $"<b>From generation:</b> {generation}\r\n" +
+              $"<b>Goals reached:</b> {goalsReached}\r\n" +
+              $"<b>Playing at real time</b>\r\n";
 
         if (text == lastText)
         {

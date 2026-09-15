@@ -232,7 +232,9 @@ public static class BuildWebDemoScene
         rect.anchorMin = new Vector2(0f, 1f);
         rect.anchorMax = new Vector2(0f, 1f);
         rect.pivot = new Vector2(0f, 1f);
-        rect.anchoredPosition = new Vector2(24f, -24f);
+        // Pushed down so the heading clears the portfolio's navbar, which overlays
+        // the top of the canvas when the demo is embedded in the site.
+        rect.anchoredPosition = new Vector2(28f, -120f);
         rect.sizeDelta = new Vector2(420f, 220f);
 
         var text = label.GetComponent<TMPro.TextMeshProUGUI>();
@@ -326,9 +328,9 @@ public static class BuildWebDemoScene
 
         // Method groups on the component, not lambdas: a persistent listener has to
         // serialise a target object and a method name, and a closure has neither.
-        MakeButton(canvas.transform, "Watch it learn", new Vector2(24f, 24f),
+        MakeButton(canvas.transform, "Watch it learn", new Vector2(28f, 110f),
                    playback.ShowProgression);
-        MakeButton(canvas.transform, "Best generation", new Vector2(214f, 24f),
+        MakeButton(canvas.transform, "Best agent", new Vector2(218f, 110f),
                    playback.ShowBestGeneration);
     }
 

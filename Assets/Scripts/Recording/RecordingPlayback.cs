@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
@@ -29,14 +30,21 @@ public class RecordingPlayback : MonoBehaviour
     [SerializeField] private Transform goalMarker;
     [SerializeField] private SetText hud;
 
-    [SerializeField, Tooltip("Recorded frames replayed per second. The recorder samples at " +
-        "10Hz, so 10 is real time. A generation is 750 frames, which is 75 seconds of " +
-        "recording, so this is set higher to show a whole generation in a watchable span.")]
-    private float playbackFps = 75f;
+    [SerializeField, Tooltip("Frames per second while stepping through the run. The recorder " +
+        "samples at 10Hz, so 10 is real time. Faster here because the point is watching the " +
+        "population change across generations, not individual decisions.")]
+    private float progressionFps = 25f;
+    [SerializeField, Tooltip("Frames per second while following one agent. 10 is real time, " +
+        "which is what makes its decisions readable.")]
+    private float singleAgentFps = 10f;
+
+    private float PlaybackFps => mode == Mode.Progression ? progressionFps : singleAgentFps;
     [SerializeField] private float agentHeight = 2.5f;
 
     private TrainingRecording.Recording recording;
     private Transform[] agents;
+    private int bestGenerationIndex;
+    private int bestAgentIndex;
     private int currentGeneration;
     private float frameCursor;
 
@@ -63,6 +71,7 @@ public class RecordingPlayback : MonoBehaviour
             return;
         }
 
+        FindBestAgent();
         CreateAgents();
 
         if (mode == Mode.SingleGeneration)
@@ -79,27 +88,90 @@ public class RecordingPlayback : MonoBehaviour
     }
 
     /// <summary>
-    /// The recorded generation that did best: most goals, and among equals the
-    /// highest fitness. Falls back to the last recorded generation, which is the
-    /// most evolved, when nothing ever reached a goal.
+    /// Finds the generation that reached the most goals, and within it the agent
+    /// that reached them.
+    ///
+    /// Which agent did the work is not recorded, but it can be read back out of
+    /// the frames: the goal is moved the moment it is reached, so every jump in
+    /// its position is a goal, and the agent standing on the old position when it
+    /// jumped is the one that got there.
     /// </summary>
-    private int BestGenerationIndex()
+    private void FindBestAgent()
     {
-        int best = recording.Generations.Count - 1;
+        bestGenerationIndex = recording.Generations.Count - 1;
+        bestAgentIndex = 0;
 
-        for (int i = 0; i < recording.Generations.Count; i++)
+        int bestGoals = -1;
+
+        for (int gi = 0; gi < recording.Generations.Count; gi++)
         {
-            TrainingRecording.Generation g = recording.Generations[i];
-            TrainingRecording.Generation b = recording.Generations[best];
+            TrainingRecording.Generation g = recording.Generations[gi];
+            var credit = new Dictionary<int, int>();
+            int goals = 0;
 
-            if (g.GoalsReached > b.GoalsReached ||
-                (g.GoalsReached == b.GoalsReached && g.BestFitness > b.BestFitness))
+            for (int fi = 1; fi < g.Frames.Count; fi++)
             {
-                best = i;
+                TrainingRecording.Frame previous = g.Frames[fi - 1];
+                TrainingRecording.Frame current = g.Frames[fi];
+
+                if (Vector2.Distance(current.Goal, previous.Goal) <= 1f)
+                {
+                    continue; // Goal has not moved, so nothing was reached.
+                }
+
+                goals++;
+
+                int nearest = -1;
+                float nearestDistance = float.MaxValue;
+                for (int a = 0; a < previous.Positions.Length; a++)
+                {
+                    if (previous.States[a] == TrainingRecording.AgentState.Absent)
+                    {
+                        continue;
+                    }
+
+                    float d = Vector2.Distance(previous.Positions[a], previous.Goal);
+                    if (d < nearestDistance)
+                    {
+                        nearestDistance = d;
+                        nearest = a;
+                    }
+                }
+
+                if (nearest >= 0)
+                {
+                    credit.TryGetValue(nearest, out int c);
+                    credit[nearest] = c + 1;
+                }
+            }
+
+            if (goals > bestGoals)
+            {
+                bestGoals = goals;
+                bestGenerationIndex = gi;
+
+                int top = 0;
+                int topCredit = -1;
+                foreach (var kv in credit)
+                {
+                    if (kv.Value > topCredit)
+                    {
+                        topCredit = kv.Value;
+                        top = kv.Key;
+                    }
+                }
+                bestAgentIndex = top;
             }
         }
 
-        return best;
+        Debug.Log($"[Playback] best generation {recording.Generations[bestGenerationIndex].Number} " +
+                  $"with {bestGoals} goal(s), reached by agent {bestAgentIndex}");
+
+        if (bestGoals <= 0)
+        {
+            Debug.LogWarning("[Playback] no recorded generation reaches a goal, so the single " +
+                             "agent view has nothing to show. Record with success capture enabled.");
+        }
     }
 
     /// <summary>Step through the whole run, showing the population improve.</summary>
@@ -111,12 +183,17 @@ public class RecordingPlayback : MonoBehaviour
         frameCursor = 0f;
     }
 
-    /// <summary>Loop the generation that did best, so it can be watched properly.</summary>
+    /// <summary>
+    /// Follow the single agent that reached the most goals, at real time, so its
+    /// decisions can actually be read. Showing the whole population here was a
+    /// mistake: most of them crash in the first seconds, which looks like nothing
+    /// but failure however good the best one is.
+    /// </summary>
     public void ShowBestGeneration()
     {
         if (recording == null) return;
         mode = Mode.SingleGeneration;
-        currentGeneration = BestGenerationIndex();
+        currentGeneration = bestGenerationIndex;
         frameCursor = 0f;
     }
 
@@ -157,7 +234,7 @@ public class RecordingPlayback : MonoBehaviour
             return;
         }
 
-        frameCursor += Time.deltaTime * playbackFps;
+        frameCursor += Time.deltaTime * PlaybackFps;
 
         // Play each generation right through. There used to be a wall clock timer
         // that moved on after a few seconds, which only ever showed the opening of
@@ -198,7 +275,8 @@ public class RecordingPlayback : MonoBehaviour
             // Draw anything present, crashed included. A crashed agent sits where
             // it stopped in the real simulation, and hiding them left the city
             // looking empty when most of an early generation has already failed.
-            bool visible = from.States[i] != TrainingRecording.AgentState.Absent;
+            bool visible = from.States[i] != TrainingRecording.AgentState.Absent
+                           && (mode == Mode.Progression || i == bestAgentIndex);
             if (agents[i].gameObject.activeSelf != visible)
             {
                 agents[i].gameObject.SetActive(visible);

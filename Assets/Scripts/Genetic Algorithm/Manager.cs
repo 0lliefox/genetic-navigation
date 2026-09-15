@@ -37,6 +37,10 @@ public class Manager : MonoBehaviour
         "algorithm only copies and mutates one parent, which is a hill climb rather than a " +
         "genetic algorithm. Turn off to reproduce the original behaviour.")]
     private bool useCrossover = true;
+    [SerializeField, Tooltip("Give each generation a fresh target, as an episode gets in the " +
+        "reinforcement learning project. Off reproduces the dissertation, where the goal was " +
+        "placed once per run and only moved when reached.")]
+    private bool randomiseGoalEachGeneration = true;
 
     private int currentGeneration = 0;
     private float previousAverageFitness = 0f;
@@ -95,6 +99,12 @@ public class Manager : MonoBehaviour
     private TrainingRecording.Generation recordingGeneration;
     private int recordStepCounter;
     private readonly List<int> generationsToRecord = new List<int>();
+    [SerializeField, Tooltip("Also keep generations in which a goal was actually reached, " +
+        "up to this many. Sampling fixed generation numbers misses them: successes are rare " +
+        "and fall between the samples, so the recording ends up showing only failure.")]
+    private int recordSuccessfulGenerations = 6;
+    private int successesRecorded;
+    private int goalsAtGenerationStart;
 
     [Header("Training Output")]
     [SerializeField, Tooltip("Write the best network to persistentDataPath as training runs. " +
@@ -157,6 +167,10 @@ public class Manager : MonoBehaviour
             else if (args[i] == "-seed" && int.TryParse(args[i + 1], out int seed))
             {
                 runSeed = seed;
+            }
+            else if (args[i] == "-randomGoal")
+            {
+                randomiseGoalEachGeneration = args[i + 1] != "off";
             }
             else if (args[i] == "-crossover")
             {
@@ -365,10 +379,18 @@ public class Manager : MonoBehaviour
 
             if (cars[0].isRandomGrid && randomGridCounter >= randomiseGridNumber)
             {
-                //if (cars[0].randomiseGoalPosition)
-                //{
-                //    cars[0].RandomiseTargetPos();
-                //}
+                // A generation here is the analogue of an episode in the
+                // reinforcement learning project, which randomises its target in
+                // OnEpisodeBegin. Left commented out, the population trains against
+                // one fixed point for the whole run and can score well by
+                // memorising a route rather than using its direction sensors.
+                //
+                // All agents in a generation share the goal, so the ranking within
+                // a generation stays fair; only the target differs between them.
+                if (randomiseGoalEachGeneration && cars[0].randomiseGoalPosition)
+                {
+                    cars[0].RandomiseTargetPos();
+                }
                 if (randomSeedNo > 99)
                 {
                     randomSeedNo = 0;
@@ -547,22 +569,28 @@ public class Manager : MonoBehaviour
         }
     }
 
-    private bool ShouldRecordThisGeneration()
+    /// <summary>
+    /// Whether this generation is one of the sampled numbers used to show the
+    /// population improving over the run.
+    /// </summary>
+    private bool IsSampledGeneration()
     {
-        return recordTraining
-            && (generationsToRecord.Count == 0 || generationsToRecord.Contains(currentGeneration));
+        return generationsToRecord.Count == 0 || generationsToRecord.Contains(currentGeneration);
     }
 
     private void BeginRecordingGeneration()
     {
-        if (!ShouldRecordThisGeneration())
+        if (!recordTraining)
         {
             return;
         }
 
+        // Buffer every generation. Whether it is worth keeping is only knowable at
+        // the end, because a generation earns its place by reaching a goal.
         recording ??= new TrainingRecording.Recording();
         recordingGeneration = new TrainingRecording.Generation { Number = currentGeneration };
         recordStepCounter = 0;
+        goalsAtGenerationStart = numberOfGoals;
     }
 
     private void CaptureRecordingFrame()
@@ -625,18 +653,33 @@ public class Manager : MonoBehaviour
             return;
         }
 
-        recordingGeneration.GoalsReached = numberOfGoals;
+        // Goals reached during THIS generation, not the running total. The total
+        // only ever climbs, so it made every late generation look successful and
+        // made the readout claim goals the viewer never sees.
+        int goalsThisGeneration = numberOfGoals - goalsAtGenerationStart;
+
+        recordingGeneration.GoalsReached = goalsThisGeneration;
         recordingGeneration.BestFitness = networks != null && networks.Count > 0
             ? networks[networks.Count - 1].fitness
             : 0f;
 
-        if (recordingGeneration.Frames.Count > 0)
+        bool successful = goalsThisGeneration > 0 && successesRecorded < recordSuccessfulGenerations;
+        bool keep = recordingGeneration.Frames.Count > 0 && (IsSampledGeneration() || successful);
+
+        if (keep)
         {
+            if (successful)
+            {
+                successesRecorded++;
+            }
+
             recording.Generations.Add(recordingGeneration);
             SaveRecording();
             Debug.Log($"[Record] generation {recordingGeneration.Number}: " +
                       $"{recordingGeneration.Frames.Count} frames, " +
-                      $"{recording.Generations.Count} generations captured so far");
+                      $"{goalsThisGeneration} goal(s) this generation, " +
+                      $"{recording.Generations.Count} kept so far" +
+                      (successful ? "  <- SUCCESS" : ""));
         }
 
         recordingGeneration = null;
