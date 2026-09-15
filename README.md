@@ -2,140 +2,137 @@
 
 A dissertation project for fourth year Master's Computer Science at Newcastle University, by Oliver Fox.
 
-A population of agents learns to drive to a goal through a procedurally generated
-city. Each agent is a small feed-forward network (18 → 10 → 5) evolved by a genetic
-algorithm rather than trained by gradient descent, and agents leave "breadcrumbs"
-behind them — a trail inspired by ant pheromones — so the population can learn to
-spread out instead of retracing one another's paths. It is the counterpart to
-[reinforcement-navigation](https://github.com/0lliefox/reinforcement-navigation),
-which solves the same problem with reinforcement learning.
+A population of agents learns to drive to a goal through a procedurally generated city.
+Each agent is a small feed-forward network (18 inputs, 10 hidden, 5 outputs) evolved by a
+genetic algorithm instead of trained by gradient descent. Agents drop "breadcrumbs" behind
+them, based on ant pheromone trails, so the population learns to spread out rather than
+follow the same route. It is the counterpart to
+[reinforcement-navigation](https://github.com/0lliefox/reinforcement-navigation), which
+solves the same problem with reinforcement learning.
 
 ## The 2026 revival
 
-The dissertation was submitted in 2023 against Unity 2020.3. This branch brings it
-up to **Unity 6 (6000.6.0f1)**, gets it building again, corrects a number of defects
-found while doing so, and works towards a WebGL build.
+The dissertation was submitted in 2023 using Unity 2020.3. This branch updates it to Unity
+6 (6000.6.0f1), gets it building again, fixes a number of bugs, and adds a WebGL build.
 
-**The code as submitted is preserved untouched.** The `master` branch is frozen, and
-the tag **`dissertation-2023`** marks the exact state the work was submitted in. Nothing
-described below has been applied to either.
+The submitted code is preserved. The `master` branch is frozen and the tag
+`dissertation-2023` marks the exact state the work was handed in. None of the changes below
+have been applied to either.
 
-### Defects corrected
+## Changelog
 
-These were found by reading the code during the revival. They are listed with their
-effect on the original results, because several of them do affect how the numbers in
-the dissertation should be read.
+### Fixed: distance travelled was always zero
 
-#### The distance term was always zero, so goal fitness was infinite
+`UpdateFitness()` measured how far an agent had moved since `lastPosition`, but
+`FixedUpdate` set `lastPosition` to the current position on the line just before calling it.
+The distance was therefore always zero, and `totalDistanceTravelled` never grew.
 
-`CarController.FixedUpdate` assigned `lastPosition = transform.position` on the line
-immediately before calling `UpdateFitness()`, which measures the distance from
-`lastPosition`. The step was therefore always exactly zero and `totalDistanceTravelled`
-never grew. Reaching the goal then computed
+An agent that reached the goal scored `20 + 100 / t²`, where `t` is that distance. Dividing
+by zero gave infinity. Every file in `Assets/Tests/` records `Maximum fitness: Infinity`.
 
-```
-fitness = 20 + 100 / t²        where t = total distance travelled ≈ 0
-```
+This also broke sorting. `CompareTo` returns 0 when comparing infinity with infinity, so
+agents that reached the goal could not be ranked against each other. Selection between
+successful agents came down to list order rather than fitness.
 
-This is visible in the original output. Every file in `Assets/Tests/` records
-`Maximum fitness: Infinity`, and the run behind the dissertation's headline F7 figure
-records `Maximum fitness: 4.398047E+14` — which solves to a total travel distance of
-**4.8 × 10⁻⁷ units**.
+An agent reaching the goal now scores around 20.004 for a real journey of about 150 units.
 
-Because `NeuralNetwork.CompareTo` returns `0` when comparing `Infinity` with `Infinity`,
-sorting could not order goal-reaching agents against each other at all. **Selection
-among successful agents was effectively arbitrary list order rather than fitness**, and
-the efficiency term the formula was built around never influenced anything.
+**This affects the numbers in the dissertation.** The average and maximum fitness figures in
+section 4.2.1 and appendix B come from this calculation, so they are not meaningful fitness
+values. The `1.374e11` reported for F7 is reproduced exactly by the file
+`Save-...-FFF7-RESETGOAL75timeframeRESETALL-100pop.txt`, whose maximum of `4.398e14` works
+out to a total travel distance of 0.00000048 units.
 
-*Effect on the reported results:* the average and maximum fitness figures in §4.2.1 and
-appendix B are artifacts of this division, not meaningful fitness values — the
-`1.374 × 10¹¹` reported for F7 is reproduced exactly by
-`Save-...-FFF7-RESETGOAL75timeframeRESETALL-100pop.txt`. The *ranking* of F7 above F6 is
-separately supported by the qualitative argument in §4.2.1 (an agent with no collision
-term learns to loiter near the goal without entering it), so the conclusion stands on
-its own reasoning; the magnitudes do not.
+The finding that F7 beats F6 is argued separately in section 4.2.1, on the grounds that an
+agent with no collision term learns to sit near the goal without entering it. That reasoning
+does not depend on the numbers, so the conclusion still holds. The magnitudes do not.
 
-After the fix, a goal-reaching agent scores a finite `20.0044` for roughly 151 units of
-travel.
+### Fixed: goal visibility was partly reading breadcrumbs
 
-#### Goal visibility was partly wired to breadcrumbs
+F6 and F7 add a penalty of 10 to the distance when the target is not visible. The check read
+`sensors[5]` to `sensors[8]`, but the goal rays are at indices 4 to 7. So it ignored one goal
+ray and instead read index 8, which is the first breadcrumb ray.
 
-The `G` term of F6 and F7 — the `+10` distance penalty applied when the target is not
-visible — tested `sensors[5]` through `sensors[8]`. The goal rays occupy indices **4–7**,
-so the test missed goal ray 0 and instead included index 8, which is the **first
-breadcrumb ray**. A goal off to one side was treated as invisible, and a breadcrumb
-directly ahead was treated as the goal being visible.
+In practice, a goal off to one side counted as not visible, and a breadcrumb straight ahead
+counted as the goal being visible. This was left over from the nine-ray setup described in
+appendix A.5, before the agent was cut down to four rays.
 
-This was left over from the nine-ray layout described in appendix A.5, before the agent
-was discretised to four NSWE rays. The sensor banks now have named offsets that
-`InputSensors` also uses, so the two cannot drift apart again.
+The sensor banks now have named offsets that `InputSensors` uses as well, so the two cannot
+get out of step again.
 
-#### Mutation chance was five times its stated value, and inert above 0.2
+### Fixed: mutation chance was five times what the inspector said
 
-`Mutate` received `(int)(1 / MutationChance)` and tested `Random.Range(0f, chance) <= 5`,
-making the real probability `5 × MutationChance`:
+`Mutate` was called with `(int)(1 / MutationChance)` and tested
+`Random.Range(0f, chance) <= 5`, which works out to a real probability of `5 × MutationChance`.
 
-| Inspector value | Actual mutation rate |
+| Inspector value | Actual rate |
 | --- | --- |
 | 0.01 | 5% |
-| 0.1 (the configured value) | 50% |
-| ≥ 0.2 | 100%, saturated |
+| 0.1 (the value used) | 50% |
+| 0.2 and above | 100% |
 
-Triggered hypermutation adjusts the chance in steps of 0.05 from a starting 0.1, so once
-it reached 0.2 further increases had no effect whatsoever. `Mutate` now takes a
-probability in `[0, 1]` and means it.
+Triggered hypermutation moves the value in steps of 0.05 starting from 0.1, so once it
+reached 0.2 any further increase did nothing at all. `Mutate` now takes a probability
+between 0 and 1 and uses it directly.
 
-#### Elitism never worked
+### Fixed: elitism never worked
 
-The elite branch assigned `networks[best]` into each elite slot **by reference**, so every
-slot and the elite itself were one shared object: it was mutated `size` times over, and
-every agent in that half wrote to the same `network.fitness`. Each slot now receives its
-own copy. The final configuration has `eliteBased` off, so this did not affect the
-submitted results.
+The elite branch copied `networks[best]` into each elite slot by reference, so every slot
+and the elite itself were the same object. It got mutated once per slot, and every agent in
+that half wrote to the same fitness value. Each slot now gets its own copy.
 
-#### Smaller corrections
+`eliteBased` is off in the final scene, so this did not affect the submitted results.
 
-- `totalDistanceCovered` accumulated the running total rather than the step, inflating the
-  reported distance quadratically.
-- "Exclude the best agent" from random-immigrant replacement excluded the best **two**,
-  because `Random.Range(int, int)` has an exclusive upper bound.
-- The scene labelled its output `F6` while the code had `F7` active. §4.2.1 selects F7, so
-  the label was stale and now reads F7.
-- The `Breadcrumb` prefab carried an orphaned `delay: 5`, left behind when the field was
-  renamed to `removeDelay`, so it silently did nothing. The effective values were the C#
-  defaults, which happen to be the values appendix A.4 selects by experiment — 10s
-  evaporation and 0.5s penalty delay. The prefab now states both explicitly.
-- Saved networks recorded no topology, only a bare list of floats. This is why the two
-  weight files recoverable from git history cannot be loaded into anything: nothing records
-  the shape that produced them. The format now carries a header and layer sizes, and
-  rejects a mismatch instead of misreading it.
-- Weights were written and parsed using the ambient culture, so any locale with a comma
-  decimal separator would corrupt every value. Now invariant throughout, which matters for
-  a browser build.
+### Fixed: smaller things
 
-### Shared code with reinforcement-navigation
+- `totalDistanceCovered` added the running total each step instead of the step itself, so
+  the reported distance grew quadratically.
+- Random immigrant replacement was meant to exclude the best agent but excluded the best
+  two, because `Random.Range(int, int)` already excludes its upper bound.
+- The scene labelled its output F6 while the code ran F7. Section 4.2.1 picks F7, so the
+  label was out of date and now reads F7.
+- The Breadcrumb prefab still had a `delay: 5` field from before it was renamed to
+  `removeDelay`, so it did nothing. The values actually in use were the code defaults, which
+  are the ones appendix A.4 settles on (10 second evaporation, 0.5 second penalty delay).
+  The prefab now sets both explicitly.
+- Saved networks stored only a list of numbers with nothing about the network shape. That is
+  why the two weight files in the git history cannot be loaded into anything. The format now
+  records the layer sizes and refuses a file that does not match.
+- Weights were written and read using the machine's locale, so anywhere that uses a comma
+  for decimals would have corrupted every value. This matters for a browser build, so it is
+  now locale independent.
 
-This project was forked from `reinforcement-navigation`, and the procedural generation,
-cells, goals and camera scripts are near-identical between the two — several are
-byte-for-byte the same file.
+### Changed: Unity 6
 
-That shared code carries its own defects, which therefore exist in both repositories. The
-one with any bearing on results is that roadblocks can never be placed on the last row or
-column of the grid, because `Random.Range(0, height - 1)` combines an already-exclusive
-upper bound with an unnecessary `- 1` — so one edge of every generated city was always
-free of obstacles. It biased both projects identically, so it does not affect the
-comparison between them. The rest are cosmetic: only two of the three building materials
-are ever selected, and the cube mesh's front and back normals are inverted.
+- Upgraded from Unity 2020.3.23f1 to 6000.6.0f1.
+- Removed ML-Agents, AI Navigation, Timeline and Multiplayer Centre. Nothing in the project
+  used them. They came along when this project was forked from `reinforcement-navigation`.
+- Removed the vendored TextMesh Pro sample scripts, which were the only thing failing to
+  compile, and updated TextMesh Pro to the Unity 6 version.
+- `Manager.SaveRun` called `UnityEditor.EditorApplication`, which cannot compile into a
+  build. Saving now only happens in the editor, and builds log the summary instead.
+- The build scene list held 12 entries, 11 of them naming scenes from the reinforcement
+  learning project that have never existed here. The only enabled one did not exist, so a
+  build produced a player with no scenes in it.
 
-These are being corrected on this branch only. `reinforcement-navigation` is left as
-submitted.
+## Shared code with reinforcement-navigation
 
-### Building
+This project was forked from `reinforcement-navigation`. The procedural generation, cells,
+goals and camera scripts are nearly the same in both, and several files are identical.
 
-Requires Unity **6000.6.0f1** with the WebGL module. The scene is
+The shared code has its own bugs, so they exist in both repositories. The only one that
+affects results is that roadblocks can never be placed on the last row or column of the
+grid, so one edge of every city is always clear. It applied equally to both projects, so it
+does not affect the comparison between them. The rest are cosmetic, such as only two of the
+three building materials ever being used.
+
+These are fixed on this branch only. `reinforcement-navigation` is left as submitted.
+
+## Building
+
+Needs Unity 6000.6.0f1 with the WebGL module. The main scene is
 `Assets/Scenes/Large City.unity`.
 
-Editor-only maintenance and self-checks live in `Assets/Editor/` and can be run headlessly:
+Editor tools and self-checks are in `Assets/Editor/` and run headlessly:
 
 ```
 Unity -batchmode -quit -nographics -projectPath . \
