@@ -109,7 +109,7 @@ public class CarController : MonoBehaviour
 
     private void Stop()
     {
-        rbd.velocity = Vector3.zero;
+        rbd.linearVelocity = Vector3.zero;
         collided = true;
         active = false;
         UpdateFitness();
@@ -162,7 +162,7 @@ public class CarController : MonoBehaviour
 
     private void FixedUpdate()
     {
-        velocity = rbd.velocity;
+        velocity = rbd.linearVelocity;
 
         // attempt at resetting all agents when stationary or collided but did not work...
         //resetTimer++;
@@ -307,8 +307,8 @@ public class CarController : MonoBehaviour
         }
 
         // velocity
-        sensors[raycasts.Count * 3] = rbd.velocity.x;
-        sensors[raycasts.Count * 3 + 1] = rbd.velocity.z;
+        sensors[raycasts.Count * 3] = rbd.linearVelocity.x;
+        sensors[raycasts.Count * 3 + 1] = rbd.linearVelocity.z;
 
         // distance to target
         sensors[raycasts.Count * 3 + 2] = Vector3.Distance(transform.localPosition, target.transform.localPosition);
@@ -366,7 +366,7 @@ public class CarController : MonoBehaviour
         transform.Rotate(rotateDir, Time.deltaTime * 200f);
         if (dirToGo == Vector3.zero)
         {
-            rbd.velocity = dirToGo;
+            rbd.linearVelocity = dirToGo;
         } 
         else
         {

@@ -101,3 +101,5 @@ coverage.xml
 **/UserSettings/*
 
 /Assets/Save
+# Visual Studio solution (Unity 6 / VS emit .slnx, not matched by *.sln)
+*.slnx
