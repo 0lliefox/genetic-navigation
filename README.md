@@ -82,6 +82,25 @@ that half wrote to the same fitness value. Each slot now gets its own copy.
 
 `eliteBased` is off in the final scene, so this did not affect the submitted results.
 
+### Changed: how the algorithm works
+
+Two changes to the method, not bug fixes. The dissertation's results were measured
+with the original behaviour.
+
+**Fitness now scores the whole episode.** It used to be assigned every physics step, so
+an agent was judged only on where it happened to be when it last updated. One that
+navigated well then drifted scored badly, and one that parked beside the goal scored
+well. That is what taught agents to hover near the goal rather than enter it. Fitness is
+now the best the agent managed at any point, plus credit per goal reached.
+
+**Crossover was added.** Every new individual used to be a copy of a single parent with
+mutations applied, which is a hill climb rather than a genetic algorithm: good partial
+solutions from different individuals could never be combined. Individuals are now bred
+from two parents with uniform crossover, with parents picked by a two-way tournament.
+Crossover was sketched out in the first commit but left commented out, and that file was
+deleted before submission, so it never ran. Set `useCrossover` to false for the original
+behaviour.
+
 ### Fixed: smaller things
 
 - `totalDistanceCovered` added the running total each step instead of the step itself, so
