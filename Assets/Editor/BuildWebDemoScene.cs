@@ -324,10 +324,12 @@ public static class BuildWebDemoScene
             return;
         }
 
+        // Method groups on the component, not lambdas: a persistent listener has to
+        // serialise a target object and a method name, and a closure has neither.
         MakeButton(canvas.transform, "Watch it learn", new Vector2(24f, 24f),
-                   () => playback.ShowProgression());
+                   playback.ShowProgression);
         MakeButton(canvas.transform, "Best generation", new Vector2(214f, 24f),
-                   () => playback.ShowBestGeneration());
+                   playback.ShowBestGeneration);
     }
 
     private static void MakeButton(Transform parent, string label, Vector2 position, UnityAction onClick)

@@ -46,8 +46,20 @@ public class CarController : MonoBehaviour
 
     // LayerMask.GetMask does a string lookup. It was being called twelve times per
     // agent per physics step; the masks never change, so resolve them once.
-    private static readonly int SolidMask = LayerMask.GetMask("Goal", "Wall");
-    private static readonly int SolidAndBreadcrumbMask = LayerMask.GetMask("Goal", "Wall", "Breadcrumb");
+    //
+    // Resolved on first use rather than in a field initializer: Unity forbids
+    // NameToLayer there and throws a TypeInitializationException, which takes the
+    // whole component with it.
+    private static int solidMask = -1;
+    private static int solidAndBreadcrumbMask = -1;
+
+    private static int SolidMask =>
+        solidMask >= 0 ? solidMask : (solidMask = LayerMask.GetMask("Goal", "Wall"));
+
+    private static int SolidAndBreadcrumbMask =>
+        solidAndBreadcrumbMask >= 0
+            ? solidAndBreadcrumbMask
+            : (solidAndBreadcrumbMask = LayerMask.GetMask("Goal", "Wall", "Breadcrumb"));
 
     // Reused rather than allocating a new List every physics step.
     private readonly Vector3[] rayDirections = new Vector3[RayDirections];

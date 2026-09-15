@@ -176,8 +176,16 @@ public class Manager : MonoBehaviour
             }
         }
 
-        // Headroom for one frame to advance the whole of a fast generation.
-        Time.maximumDeltaTime = Mathf.Max(Time.maximumDeltaTime, GameSpeed / 30f);
+        // Deliberately NOT raising Time.maximumDeltaTime. It clamps unscaled frame
+        // time and the time scale multiplies afterwards, so raising it to give a
+        // fast run headroom let a single frame advance over a thousand seconds of
+        // game time, around seventeen generations. Everything frame based then gets
+        // one step per seventeen generations, and agent spawning is a coroutine: the
+        // population silently collapsed to one agent while still reporting a hundred.
+        //
+        // Left at the default, a frame advances at most a third of a second of game
+        // time, so a generation is a few hundred frames and the population spawns.
+        // Speed then comes from how many frames the machine can actually run.
     }
 
     private void Update()
@@ -381,6 +389,7 @@ public class Manager : MonoBehaviour
             SortNetworks();//this sorts networks and mutates them
         }
 
+        WarnIfPopulationIncomplete();
         FinishRecordingGeneration();
         BeginRecordingGeneration();
 
@@ -388,16 +397,47 @@ public class Manager : MonoBehaviour
         StartCoroutine(DelayedCreation(spawnRate / Time.timeScale, populationSize)); // Spawning lots at one location led to agents being shoved off the map
     }
 
+    /// <summary>
+    /// Spawns the population, staggered so they do not all appear on top of each
+    /// other and shove one another off the map.
+    ///
+    /// The stagger is measured against elapsed time and catches up, spawning
+    /// everything that is due each frame. It used to yield once per agent, and a
+    /// coroutine resumes at most once per frame, so the population could only grow
+    /// by one per frame. At a high game speed a frame advances a lot of simulated
+    /// time and a generation is only a handful of frames, so most of the population
+    /// never spawned at all and the algorithm was quietly running with a fraction
+    /// of the agents it reported.
+    /// </summary>
     private IEnumerator DelayedCreation(float delay, int populationSize)
     {
         cars = new List<CarController>();
-        for (int i = 0; i < populationSize; i++)
+
+        float elapsed = 0f;
+        int spawned = 0;
+
+        while (spawned < populationSize)
         {
-            CarController car = Instantiate(prefab, new Vector3(-20f, 2.5f, 0), Quaternion.Euler(0, 90f, 0), transform.parent).GetComponent<CarController>();
-            car.agentNo = i;
-            car.network = networks[i]; // Deploys network to each learner
-            cars.Add(car);
-            yield return new WaitForSeconds(delay);
+            int due = delay <= 0f
+                ? populationSize
+                : Mathf.Min(populationSize, Mathf.FloorToInt(elapsed / delay) + 1);
+
+            while (spawned < due)
+            {
+                CarController car = Instantiate(prefab, new Vector3(-20f, 2.5f, 0), Quaternion.Euler(0, 90f, 0), transform.parent).GetComponent<CarController>();
+                car.agentNo = spawned;
+                car.network = networks[spawned]; // Deploys network to each learner
+                cars.Add(car);
+                spawned++;
+            }
+
+            if (spawned >= populationSize)
+            {
+                break;
+            }
+
+            yield return null;
+            elapsed += Time.deltaTime;
         }
     }
 
@@ -478,6 +518,32 @@ public class Manager : MonoBehaviour
                 int randomValue = Random.Range(0, populationSize - 1); // exclude best agent from random
                 networks[randomValue] = new NeuralNetwork(layers, networks[randomValue].agentNo); 
             }
+        }
+    }
+
+    /// <summary>
+    /// Complains if the previous generation never reached its full population.
+    ///
+    /// Agents spawn from a coroutine, so they arrive over several frames. At a high
+    /// enough time scale a generation lasts fewer frames than the population needs,
+    /// and the run quietly continues with a fraction of the agents it reports. That
+    /// happened, went unnoticed for a long time, and made every result meaningless,
+    /// so it is now loud.
+    /// </summary>
+    private void WarnIfPopulationIncomplete()
+    {
+        if (cars == null || currentGeneration <= 1)
+        {
+            return;
+        }
+
+        if (cars.Count < populationSize)
+        {
+            Debug.LogWarning(
+                $"Generation {currentGeneration - 1} ran with {cars.Count} of {populationSize} " +
+                $"agents. Agents spawn over several frames, and this generation did not last " +
+                $"long enough in frames for all of them to appear. Lower GameSpeed " +
+                $"(currently {GameSpeed}) or raise spawnRate.");
         }
     }
 
