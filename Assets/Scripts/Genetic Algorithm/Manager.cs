@@ -72,8 +72,29 @@ public class Manager : MonoBehaviour
         "No selection or mutation happens in this mode.")]
     private bool replayTrainedNetwork = false;
 
+    [SerializeField, Tooltip("Seconds before agents are respawned while replaying. " +
+        "Short generations suit watching evolution, but in replay there are no generations " +
+        "to turn over and a network trained over long episodes needs time to cross the city.")]
+    private float replayTimeframe = 60f;
+
+    /// <summary>Episode length for the mode currently running.</summary>
+    private float EffectiveTimeframe => replayTrainedNetwork ? replayTimeframe : timeframe;
+
     public bool IsReplaying => replayTrainedNetwork;
     public bool HasTrainedNetwork => trainedNetwork != null;
+
+    [Header("Recording")]
+    [SerializeField, Tooltip("Capture selected generations to persistentDataPath, for playback " +
+        "in the browser. Also enabled by -record.")]
+    private bool recordTraining = false;
+    [SerializeField, Tooltip("Physics steps between captured frames. 5 gives 10Hz at the " +
+        "default fixed timestep, which is plenty for playback.")]
+    private int recordEveryNSteps = 5;
+
+    private TrainingRecording.Recording recording;
+    private TrainingRecording.Generation recordingGeneration;
+    private int recordStepCounter;
+    private readonly List<int> generationsToRecord = new List<int>();
 
     [Header("Training Output")]
     [SerializeField, Tooltip("Write the best network to persistentDataPath as training runs. " +
@@ -141,6 +162,18 @@ public class Manager : MonoBehaviour
             {
                 useCrossover = args[i + 1] != "off";
             }
+            else if (args[i] == "-record")
+            {
+                recordTraining = true;
+                // Comma separated generation numbers, e.g. -record 1,10,50,150,326
+                foreach (string part in args[i + 1].Split(','))
+                {
+                    if (int.TryParse(part.Trim(), out int g))
+                    {
+                        generationsToRecord.Add(g);
+                    }
+                }
+            }
         }
 
         // Headroom for one frame to advance the whole of a fast generation.
@@ -162,6 +195,7 @@ public class Manager : MonoBehaviour
         }
 
         currentStepCount++;
+        CaptureRecordingFrame();
 
         if (resetStepCount > 0)
         {
@@ -259,7 +293,7 @@ public class Manager : MonoBehaviour
         }
         else
         {
-            InvokeRepeating("CreateAgents", 0.1f, timeframe); //repeating function
+            InvokeRepeating("CreateAgents", 0.1f, EffectiveTimeframe); //repeating function
         }
     }
 
@@ -346,6 +380,9 @@ public class Manager : MonoBehaviour
 
             SortNetworks();//this sorts networks and mutates them
         }
+
+        FinishRecordingGeneration();
+        BeginRecordingGeneration();
 
         randomGridCounter++;
         StartCoroutine(DelayedCreation(spawnRate / Time.timeScale, populationSize)); // Spawning lots at one location led to agents being shoved off the map
@@ -442,6 +479,113 @@ public class Manager : MonoBehaviour
                 networks[randomValue] = new NeuralNetwork(layers, networks[randomValue].agentNo); 
             }
         }
+    }
+
+    private bool ShouldRecordThisGeneration()
+    {
+        return recordTraining
+            && (generationsToRecord.Count == 0 || generationsToRecord.Contains(currentGeneration));
+    }
+
+    private void BeginRecordingGeneration()
+    {
+        if (!ShouldRecordThisGeneration())
+        {
+            return;
+        }
+
+        recording ??= new TrainingRecording.Recording();
+        recordingGeneration = new TrainingRecording.Generation { Number = currentGeneration };
+        recordStepCounter = 0;
+    }
+
+    private void CaptureRecordingFrame()
+    {
+        if (recordingGeneration == null || cars == null || cars.Count == 0)
+        {
+            return;
+        }
+
+        if (++recordStepCounter < recordEveryNSteps)
+        {
+            return;
+        }
+        recordStepCounter = 0;
+
+        // All agents share one goal, so ask whichever one is alive.
+        Vector3 goal = Vector3.zero;
+        for (int i = 0; i < cars.Count; i++)
+        {
+            if (cars[i] != null)
+            {
+                goal = cars[i].TargetPosition;
+                break;
+            }
+        }
+
+        // Always the full population. Agents spawn over the first few frames, so
+        // sizing to cars.Count would make early frames narrower than later ones,
+        // and the header records one agent count for the whole generation.
+        var frame = new TrainingRecording.Frame
+        {
+            Goal = new Vector2(goal.x, goal.z),
+            Positions = new Vector2[populationSize],
+            Headings = new float[populationSize],
+            Active = new bool[populationSize],
+        };
+
+        for (int i = 0; i < populationSize && i < cars.Count; i++)
+        {
+            CarController car = cars[i];
+            if (car == null)
+            {
+                continue; // Not spawned yet, or already destroyed: stays inactive.
+            }
+
+            frame.Positions[i] = new Vector2(car.transform.position.x, car.transform.position.z);
+            frame.Headings[i] = car.transform.eulerAngles.y;
+            frame.Active[i] = car.active;
+        }
+
+        recordingGeneration.Frames.Add(frame);
+    }
+
+    private void FinishRecordingGeneration()
+    {
+        if (recordingGeneration == null)
+        {
+            return;
+        }
+
+        recordingGeneration.GoalsReached = numberOfGoals;
+        recordingGeneration.BestFitness = networks != null && networks.Count > 0
+            ? networks[networks.Count - 1].fitness
+            : 0f;
+
+        if (recordingGeneration.Frames.Count > 0)
+        {
+            recording.Generations.Add(recordingGeneration);
+            SaveRecording();
+            Debug.Log($"[Record] generation {recordingGeneration.Number}: " +
+                      $"{recordingGeneration.Frames.Count} frames, " +
+                      $"{recording.Generations.Count} generations captured so far");
+        }
+
+        recordingGeneration = null;
+    }
+
+    private void SaveRecording()
+    {
+#if !UNITY_WEBGL || UNITY_EDITOR
+        if (recording == null || recording.Generations.Count == 0)
+        {
+            return;
+        }
+
+        string tag = runSeed == int.MinValue ? "" : $"-seed{runSeed}";
+        string path = Path.Combine(Application.persistentDataPath, $"training-recording{tag}.bytes");
+        File.WriteAllBytes(path, TrainingRecording.Serialise(recording));
+#endif
     }
 
     /// <summary>

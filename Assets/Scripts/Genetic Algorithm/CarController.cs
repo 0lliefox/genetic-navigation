@@ -54,6 +54,9 @@ public class CarController : MonoBehaviour
 
     [Header("Environment")]
     private GameObject target;
+
+    /// <summary>Where the goal currently is, for the training recorder.</summary>
+    public Vector3 TargetPosition => target != null ? target.transform.position : Vector3.zero;
     private CheckPosition targetPlacement;
     private Rigidbody rbd;
     private GridWithParams grid;
