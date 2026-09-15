@@ -46,7 +46,7 @@ public class Grid : MonoBehaviour
     private int prevSeed = 1;
 
     [SerializeField]
-    private string shaderName = "Lightweight Render Pipeline/Lit";
+    private string shaderName = "Universal Render Pipeline/Lit";
 
     [SerializeField, Tooltip("How many procedural materials to generate?")]
     private int proceduralMaterialsToGenerate = 3;

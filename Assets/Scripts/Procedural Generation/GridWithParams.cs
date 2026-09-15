@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -7,6 +7,9 @@ using Random = UnityEngine.Random;
 
 public class GridWithParams : MonoBehaviour
 {
+    // Layer 6 is "Wall" in TagManager; the agent's raycast masks look it up by name.
+    private const int WallLayer = 6;
+
     [SerializeField]
     public ProceduralParam parameters = null;
 
@@ -28,7 +31,7 @@ public class GridWithParams : MonoBehaviour
         }
     }
 
-    void Reset()
+    void Initialise()
     {
         ClearAll();
 
@@ -48,7 +51,7 @@ public class GridWithParams : MonoBehaviour
 
     public void BuildGrid()
     {
-        Reset();
+        Initialise();
 
         grid = new GameObject[parameters.height, parameters.width];
 
@@ -77,15 +80,15 @@ public class GridWithParams : MonoBehaviour
                 GameObject roadblock = new GameObject($"roadblock_{i}");
                 roadblock.transform.parent = gameObject.transform;
 
-                int randomX = Random.Range(0, parameters.height - 1);
-                int randomZ = Random.Range(0, parameters.width - 1);
+                int randomX = Random.Range(0, parameters.height);
+                int randomZ = Random.Range(0, parameters.width);
 
                 for (int j = 0; j < 5; j++)
                 {
                     if (roadblocks[randomX, randomZ] != null)
                     {
-                        randomX = Random.Range(0, parameters.height - 1);
-                        randomZ = Random.Range(0, parameters.width - 1);
+                        randomX = Random.Range(0, parameters.height);
+                        randomZ = Random.Range(0, parameters.width);
                     }
                     else
                     {
@@ -132,7 +135,7 @@ public class GridWithParams : MonoBehaviour
                 roadblock.AddComponent<BoxCollider>();
                 roadblock.GetComponent<BoxCollider>().isTrigger = false;
                 roadblock.tag = "Wall";
-                roadblock.layer = 6; 
+                roadblock.layer = WallLayer;
 
                 renderer.material = parameters.roadblockMaterial;
             }
@@ -185,29 +188,24 @@ public class GridWithParams : MonoBehaviour
         meshFilter.mesh = shape.Generate();
 
         if (proceduralMaterials.Length > 0 && parameters.defaultMaterials.Length == 0)
-            renderer.material = proceduralMaterials[Random.Range(0, parameters.proceduralMaterialsToGenerate - 1)];
+            renderer.material = proceduralMaterials[Random.Range(0, proceduralMaterials.Length)];
         else if(proceduralMaterials.Length == 0 && parameters.defaultMaterials.Length > 0)
-            renderer.material = parameters.defaultMaterials[Random.Range(0, parameters.defaultMaterials.Length - 1)];
+            renderer.material = parameters.defaultMaterials[Random.Range(0, parameters.defaultMaterials.Length)];
 
-        if(parameters.shouldGenerateRigidBodies){
-            cell.AddComponent<BoxCollider>();
-            cell.GetComponent<BoxCollider>().isTrigger = true;
+        if (parameters.shouldGenerateRigidBodies)
+        {
             cell.AddComponent<Rigidbody>();
         }
 
-        if (parameters.shouldGenerateTriggers)
-        {
-            cell.AddComponent<BoxCollider>();
-            cell.GetComponent<BoxCollider>().isTrigger = true;
-            cell.tag = "Wall";
-            cell.layer = 6;
-        } else
-        {
-            cell.AddComponent<BoxCollider>();
-            cell.GetComponent<BoxCollider>().isTrigger = false;
-            cell.tag = "Wall";
-            cell.layer = 6;
-        }
+        // One collider only. Previously the rigidbody branch above added its own,
+        // so with rigidbodies enabled a cell ended up with two: GetComponent
+        // returned the first, meaning the trigger flag was applied to that one and
+        // the second kept its default. Inert in the shipped presets, which all
+        // have shouldGenerateRigidBodies off, but wrong.
+        BoxCollider collider = cell.AddComponent<BoxCollider>();
+        collider.isTrigger = parameters.shouldGenerateTriggers;
+        cell.tag = "Wall";
+        cell.layer = WallLayer;
         
         // Calculate bounds
         bounds.Encapsulate(renderer.bounds);

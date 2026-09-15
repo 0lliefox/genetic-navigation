@@ -107,8 +107,11 @@ public class Cube : Shape
         // Step 3 - Create & Assign normal
         Vector3[] normals = new Vector3[24];
 
-        Vector3 front = Vector3.forward;
-        Vector3 back = Vector3.back;
+        // The front face is built at z = 0 and the back face at z = Depth, so the
+        // outward normals are -Z and +Z respectively. These were the wrong way
+        // round, which lit both faces as though they faced inwards.
+        Vector3 front = Vector3.back;
+        Vector3 back = Vector3.forward;
         Vector3 top = Vector3.up;
         Vector3 bottom = Vector3.down;
         Vector3 left = Vector3.left;

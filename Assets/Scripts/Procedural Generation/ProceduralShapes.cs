@@ -14,7 +14,7 @@ public class ProceduralShapes : MonoBehaviour
     private float depth = 10.0f;
 
     [SerializeField]
-    private string shaderName = "Lightweight Render Pipeline/Lit";
+    private string shaderName = "Universal Render Pipeline/Lit";
 
     [SerializeField]
     private ShapeTypes shapeType = ShapeTypes.Quad;
