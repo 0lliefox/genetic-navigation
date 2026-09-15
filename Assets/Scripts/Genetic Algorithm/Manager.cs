@@ -61,14 +61,53 @@ public class Manager : MonoBehaviour
         "efficiency term in the goal fitness discriminates usefully between successful agents.")]
     private bool logGenerationStats = true;
 
+    [Header("Training Output")]
+    [SerializeField, Tooltip("Write the best network to persistentDataPath as training runs. " +
+        "Also enabled by passing -train on the command line.")]
+    private bool saveTrainedNetworks = false;
+    private float bestFitnessSeen = float.NegativeInfinity;
+
     public List<NeuralNetwork> networks;
     private List<CarController> cars; 
 
     void Start()// Start is called before the first frame update
     {
+        ApplyCommandLineOverrides();
         startingMutationChance = MutationChance;
         startingMutationStrength = MutationStrength;
         RunAlgorithm();
+    }
+
+    /// <summary>
+    /// Lets a headless training run be configured without editing the scene.
+    ///
+    /// Generations advance on simulated time, so wall clock training speed is set
+    /// by Time.timeScale, not by how fast the machine is. Time.maximumDeltaTime
+    /// caps how much simulated time a single frame may advance, and its default of
+    /// 0.333s is exactly 20x at 60fps, so raising GameSpeed past 20 does nothing on
+    /// its own. It is raised here to match.
+    /// </summary>
+    private void ApplyCommandLineOverrides()
+    {
+        string[] args = System.Environment.GetCommandLineArgs();
+        for (int i = 0; i < args.Length - 1; i++)
+        {
+            if (args[i] == "-gameSpeed" && float.TryParse(args[i + 1], out float speed))
+            {
+                GameSpeed = speed;
+            }
+            else if (args[i] == "-population" && int.TryParse(args[i + 1], out int size))
+            {
+                populationSize = size;
+            }
+            else if (args[i] == "-maxSteps" && int.TryParse(args[i + 1], out int steps))
+            {
+                maxStepCount = steps;
+            }
+        }
+
+        // Headroom for one frame to advance the whole of a fast generation.
+        Time.maximumDeltaTime = Mathf.Max(Time.maximumDeltaTime, GameSpeed / 30f);
     }
 
     private void Update()
@@ -255,6 +294,7 @@ public class Manager : MonoBehaviour
         networks.Sort();
 
         LogGenerationStats();
+        RecordTrainedNetwork();
 
         if (runningAverageFitness.Count > 0 && runningAverageFitness.Count >= CheckMutation)
         {
@@ -306,6 +346,48 @@ public class Manager : MonoBehaviour
                 networks[randomValue] = new NeuralNetwork(layers, networks[randomValue].agentNo); 
             }
         }
+    }
+
+    /// <summary>
+    /// Writes the best network of the run out during training.
+    ///
+    /// The editor path below saves into Assets/Save every generation, which is
+    /// gitignored and does not exist in a build. This writes to
+    /// persistentDataPath instead so a standalone player can be left training
+    /// headless, which is how the shipped network is produced.
+    ///
+    /// Two files: the best fitness seen at any point in the run, and the most
+    /// recent generation's best. Fitness here is the value at the moment an agent
+    /// stopped, so a single lucky run can top the table; having both means the
+    /// choice of which to ship can be made by watching them rather than by
+    /// trusting the number.
+    /// </summary>
+    private void RecordTrainedNetwork()
+    {
+#if !UNITY_WEBGL || UNITY_EDITOR
+        bool requested = saveTrainedNetworks
+            || System.Environment.GetCommandLineArgs().Contains("-train");
+
+        if (!requested || networks.Count == 0)
+        {
+            return;
+        }
+
+        // Index populationSize - 1 is the generation's best and is never mutated,
+        // so this is the network as it performed, not a mutated descendant.
+        NeuralNetwork best = networks[networks.Count - 1];
+        string serialised = best.Serialise(numberOfGoals);
+
+        File.WriteAllText(Path.Combine(Application.persistentDataPath, "latest-network.txt"), serialised);
+
+        if (best.fitness > bestFitnessSeen)
+        {
+            bestFitnessSeen = best.fitness;
+            File.WriteAllText(Path.Combine(Application.persistentDataPath, "best-network.txt"), serialised);
+            Debug.Log($"[Train] gen {currentGeneration}: new best fitness {best.fitness:G6}, " +
+                      $"goals so far {numberOfGoals}");
+        }
+#endif
     }
 
     /// <summary>

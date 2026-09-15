@@ -63,17 +63,34 @@ public class CheckPosition : MonoBehaviour
         SetGoalPosition();
     }
 
-    private void SetGoalPosition()
+    /// <summary>
+    /// Drops the goal on a random road junction.
+    ///
+    /// This is now the only implementation. CarController had a second copy that
+    /// it used for every placement after the first, with a different random range
+    /// and the margin subtracted rather than added, so the goal a run started with
+    /// sat a cell away from anywhere a later goal could appear. This keeps the
+    /// version that did all the work and CarController calls into it.
+    /// </summary>
+    public void SetGoalPosition()
     {
-        if (grid != null)
+        if (grid == null || grid.parameters == null)
         {
-            int gridHeight = grid.parameters.height;
-            Vector3 gridMargin = grid.parameters.marginBetweenShapes;
-
-            int randomX = Random.Range(-Mathf.FloorToInt(gridHeight / 2) - 1, Mathf.FloorToInt(gridHeight / 2) + 1);
-            int randomZ = Random.Range(-Mathf.FloorToInt(gridHeight / 2) - 1, Mathf.FloorToInt(gridHeight / 2) + 1);
-
-            transform.localPosition = new Vector3(randomX * gridMargin.x * 2 + gridMargin.x, transform.localScale.y / 2, randomZ * gridMargin.z * 2 + gridMargin.z);
+            return;
         }
+
+        int gridHeight = grid.parameters.height;
+        int gridWidth = grid.parameters.width;
+        Vector3 gridMargin = grid.parameters.marginBetweenShapes;
+
+        int randomX = Random.Range(-Mathf.FloorToInt(gridHeight / 2) + 1, gridHeight - Mathf.FloorToInt(gridHeight / 2));
+        int randomZ = Random.Range(-Mathf.FloorToInt(gridHeight / 2), gridWidth - Mathf.FloorToInt(gridHeight / 2));
+
+        // Offset by one margin so the goal lands between buildings rather than
+        // inside one, which keeps it reachable whatever the roadblocks do.
+        transform.localPosition = new Vector3(
+            randomX * gridMargin.x * 2 - gridMargin.x,
+            transform.localScale.y / 2,
+            randomZ * gridMargin.z * 2 - gridMargin.z);
     }
 }

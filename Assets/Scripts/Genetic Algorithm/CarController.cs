@@ -50,6 +50,7 @@ public class CarController : MonoBehaviour
 
     [Header("Environment")]
     private GameObject target;
+    private CheckPosition targetPlacement;
     private Rigidbody rbd;
     private GridWithParams grid;
 
@@ -86,6 +87,7 @@ public class CarController : MonoBehaviour
             if (tr.tag == "Goal")
             {
                 target = tr.gameObject;
+                targetPlacement = tr.GetComponent<CheckPosition>();
             }
             if (tr.tag == "Grid")
             {
@@ -133,16 +135,13 @@ public class CarController : MonoBehaviour
 
     public void RandomiseTargetPos()
     {
-        int gridHeight = grid.parameters.height;
-        int gridWidth = grid.parameters.width;
-        Vector3 gridMargin = grid.parameters.marginBetweenShapes;
-
-        // Get random building in environment
-        int randomX = Random.Range(-Mathf.FloorToInt(gridHeight / 2) + 1, gridHeight - Mathf.FloorToInt(gridHeight / 2));
-        int randomZ = Random.Range(-Mathf.FloorToInt(gridHeight / 2), gridWidth - Mathf.FloorToInt(gridHeight / 2));
-
-        // Position target in centre of a building so that it is always reachable despite roadblocks
-        target.transform.localPosition = new Vector3(randomX * gridMargin.x * 2 - gridMargin.x, target.transform.localScale.y / 2, randomZ * gridMargin.z * 2 - gridMargin.z);
+        // Placement lives on the goal itself now. This used to be a second copy of
+        // the same logic that disagreed with the one in CheckPosition, so the goal
+        // a run started with came from a different distribution to every goal after.
+        if (targetPlacement != null)
+        {
+            targetPlacement.SetGoalPosition();
+        }
     }
 
     public void BuildRandomGrid(int randomSeedNo)
