@@ -57,6 +57,9 @@ public class Manager : MonoBehaviour
     [SerializeField] private string fitnessFunction;
     [SerializeField] private bool resetOnGridCompletion = false;
     [SerializeField] private CellManager cellManager;
+    [SerializeField, Tooltip("Log per-generation fitness spread. Used to judge whether the " +
+        "efficiency term in the goal fitness discriminates usefully between successful agents.")]
+    private bool logGenerationStats = true;
 
     public List<NeuralNetwork> networks;
     private List<CarController> cars; 
@@ -251,6 +254,8 @@ public class Manager : MonoBehaviour
     {   
         networks.Sort();
 
+        LogGenerationStats();
+
         if (runningAverageFitness.Count > 0 && runningAverageFitness.Count >= CheckMutation)
         {
             runningAverageFitness.RemoveAt(0);
@@ -268,10 +273,16 @@ public class Manager : MonoBehaviour
 
         if (eliteBased)
         {
+            // Each slot needs its own copy of the elite. This previously assigned
+            // the elite *by reference*, so every elite slot and the elite itself
+            // were one shared object: it was mutated `size` times over, and every
+            // car in that half wrote to the same network.fitness. Elitism never
+            // actually worked.
+            NeuralNetwork elite = networks[populationSize - 1];
             for (int i = 0; i < size; i++)
             {
-                networks[i] = networks[populationSize - 1];
-                networks[i].Mutate((int)(1 / MutationChance), MutationStrength);
+                networks[i] = elite.copy(new NeuralNetwork(layers, elite.agentNo));
+                networks[i].Mutate(MutationChance, MutationStrength);
             }
         } 
         else
@@ -279,7 +290,7 @@ public class Manager : MonoBehaviour
             for (int i = 0; i < size; i++)
             {
                 networks[i] = networks[i + size].copy(new NeuralNetwork(layers, networks[i + size].agentNo));
-                networks[i].Mutate((int)(1 / MutationChance), MutationStrength);
+                networks[i].Mutate(MutationChance, MutationStrength);
             }
         }
 
@@ -289,10 +300,39 @@ public class Manager : MonoBehaviour
             int numOfRandomAgents = Mathf.RoundToInt(populationSize * PercentageOfRandomAgents);
             for (int i = 0; i < numOfRandomAgents; i++)
             {
-                int randomValue = Random.Range(0, populationSize - 2); // exclude best agent from random
+                // Random.Range(int, int) has an exclusive upper bound, so the old
+                // `populationSize - 2` excluded the best *two* agents, not one.
+                int randomValue = Random.Range(0, populationSize - 1); // exclude best agent from random
                 networks[randomValue] = new NeuralNetwork(layers, networks[randomValue].agentNo); 
             }
         }
+    }
+
+    /// <summary>
+    /// Reports the fitness spread across the generation just finished.
+    ///
+    /// The non-finite count is the direct check on the divide-by-zero that used to
+    /// give every goal-reaching agent a fitness of Infinity - which left CompareTo
+    /// unable to order them, so selection among successful agents was arbitrary.
+    /// It should always be zero.
+    /// </summary>
+    private void LogGenerationStats()
+    {
+        if (!logGenerationStats || networks.Count == 0)
+        {
+            return;
+        }
+
+        int nonFinite = networks.Count(n => float.IsNaN(n.fitness) || float.IsInfinity(n.fitness));
+
+        Debug.Log(
+            $"[GA] gen {currentGeneration} " +
+            $"best={networks[networks.Count - 1].fitness:G6} " +
+            $"median={networks[networks.Count / 2].fitness:G6} " +
+            $"worst={networks[0].fitness:G6} " +
+            $"mean={networks.Average(n => n.fitness):G6} " +
+            $"goals={numberOfGoals} distance={totalDistanceCovered:G6} " +
+            $"non-finite={nonFinite}");
     }
 
     private void Hypermutation()
