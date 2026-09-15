@@ -64,10 +64,9 @@ public static class BuildWebDemoScene
             return;
         }
 
-        ApplyBrowserTuning(manager);
         ConfigureCameraForSmallScreens();
-        LayOutCoverageCells();
         PositionHud();
+        ConvertToPlayback(manager);
 
         bool saved = EditorSceneManager.SaveScene(scene, OutputScene, true);
         if (!saved)
@@ -247,6 +246,65 @@ public static class BuildWebDemoScene
         }
 
         Debug.Log("[WebDemo] HUD anchored to the top left");
+    }
+
+    /// <summary>
+    /// Strips the live simulation and replaces it with recorded playback.
+    ///
+    /// The browser shows a recording rather than running the algorithm. Live
+    /// training needs hundreds of generations before anything visibly changes, and
+    /// replaying a trained network depends on where the goal happens to land, so
+    /// neither reliably shows what the project does. A recording of a real run
+    /// does, and costs nothing but moving transforms: no physics, no raycasts and
+    /// no network evaluation in the browser at all.
+    /// </summary>
+    private static void ConvertToPlayback(Manager manager)
+    {
+        var recordingAsset = AssetDatabase.LoadAssetAtPath<TextAsset>(ImportRecording.Destination);
+        if (recordingAsset == null)
+        {
+            Fail($"No recording at {ImportRecording.Destination}. " +
+                 "Run ImportRecording first, then build this scene.");
+            return;
+        }
+
+        // The goal keeps its look but stops placing itself; playback drives it.
+        var placement = Object.FindFirstObjectByType<CheckPosition>();
+        Transform goalMarker = placement != null ? placement.transform : null;
+        if (placement != null)
+        {
+            Object.DestroyImmediate(placement);
+        }
+
+        // Coverage cells only turn green when a live agent triggers them, so they
+        // would sit inert and misleading during playback.
+        var cellManager = Object.FindFirstObjectByType<CellManager>();
+        if (cellManager != null)
+        {
+            Object.DestroyImmediate(cellManager.gameObject);
+        }
+
+        var hud = Object.FindFirstObjectByType<SetText>();
+        var agentPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Objects/Agent.prefab");
+
+        var playbackObject = new GameObject("Playback");
+        var playback = playbackObject.AddComponent<RecordingPlayback>();
+
+        var so = new SerializedObject(playback);
+        so.FindProperty("recordingAsset").objectReferenceValue = recordingAsset;
+        so.FindProperty("agentPrefab").objectReferenceValue = agentPrefab;
+        so.FindProperty("goalMarker").objectReferenceValue = goalMarker;
+        so.FindProperty("hud").objectReferenceValue = hud;
+        so.FindProperty("mode").enumValueIndex = 0; // Progression
+        so.ApplyModifiedPropertiesWithoutUndo();
+
+        // Remove the genetic algorithm itself last, so the lookups above still work.
+        if (manager != null)
+        {
+            Object.DestroyImmediate(manager.gameObject);
+        }
+
+        Debug.Log("[WebDemo] converted to recorded playback; live simulation removed");
     }
 
     private static void AddToBuildSettings()

@@ -17,6 +17,36 @@ public class SetText : MonoBehaviour
     }
 
     /// <summary>
+    /// Readout for recorded playback, which has no live fitness or elapsed time.
+    /// </summary>
+    public void SetPlaybackText(int generation, int goalsReached, float bestFitness, bool progression)
+    {
+        if (label == null || Time.unscaledTime < nextRefreshTime)
+        {
+            return;
+        }
+        nextRefreshTime = Time.unscaledTime + refreshInterval;
+
+        string heading = progression
+            ? "<b><size=130%>Learning to navigate</size></b>"
+            : "<b><size=130%>Best generation</size></b>";
+
+        string text =
+            $"{heading}\r\n\r\n" +
+            $"<b>Generation:</b> {generation}\r\n" +
+            $"<b>Goals reached:</b> {goalsReached}\r\n" +
+            $"<b>Best fitness:</b> {bestFitness:G4}\r\n";
+
+        if (text == lastText)
+        {
+            return;
+        }
+
+        lastText = text;
+        label.text = text;
+    }
+
+    /// <summary>
     /// Updates the HUD, at most once per refreshInterval.
     ///
     /// Manager calls this from FixedUpdate, so it used to run on every physics

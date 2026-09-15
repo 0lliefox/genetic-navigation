@@ -13,16 +13,29 @@ using UnityEngine;
 /// </summary>
 public static class TrainingRecording
 {
-    public const string Magic = "GNREC1";
+    public const string Magic = "GNREC2";
     public const float PositionScale = 100f;   // centimetre precision
     public const float HeadingScale = 10f;     // tenths of a degree
+
+    /// <summary>What an agent was doing in a frame.</summary>
+    public enum AgentState : byte
+    {
+        /// Not spawned yet, or already cleaned up. Should not be drawn.
+        Absent = 0,
+        /// Driving.
+        Driving = 1,
+        /// Hit something and stopped. Still sits there in the real simulation,
+        /// so playback draws it too rather than making most of the population
+        /// disappear the moment it crashes.
+        Crashed = 2,
+    }
 
     public class Frame
     {
         public Vector2 Goal;
         public Vector2[] Positions;
         public float[] Headings;
-        public bool[] Active;
+        public AgentState[] States;
     }
 
     public class Generation
@@ -77,7 +90,7 @@ public static class TrainingRecording
                         w.Write((short)Mathf.Clamp(f.Positions[i].x * PositionScale, short.MinValue, short.MaxValue));
                         w.Write((short)Mathf.Clamp(f.Positions[i].y * PositionScale, short.MinValue, short.MaxValue));
                         w.Write((short)Mathf.Clamp(f.Headings[i] * HeadingScale, short.MinValue, short.MaxValue));
-                        w.Write(f.Active[i]);
+                        w.Write((byte)f.States[i]);
                     }
                 }
             }
@@ -121,14 +134,14 @@ public static class TrainingRecording
                         Goal = new Vector2(r.ReadInt16() / PositionScale, r.ReadInt16() / PositionScale),
                         Positions = new Vector2[agentCount],
                         Headings = new float[agentCount],
-                        Active = new bool[agentCount],
+                        States = new AgentState[agentCount],
                     };
 
                     for (int i = 0; i < agentCount; i++)
                     {
                         f.Positions[i] = new Vector2(r.ReadInt16() / PositionScale, r.ReadInt16() / PositionScale);
                         f.Headings[i] = r.ReadInt16() / HeadingScale;
-                        f.Active[i] = r.ReadBoolean();
+                        f.States[i] = (AgentState)r.ReadByte();
                     }
 
                     g.Frames.Add(f);

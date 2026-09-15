@@ -531,7 +531,7 @@ public class Manager : MonoBehaviour
             Goal = new Vector2(goal.x, goal.z),
             Positions = new Vector2[populationSize],
             Headings = new float[populationSize],
-            Active = new bool[populationSize],
+            States = new TrainingRecording.AgentState[populationSize],
         };
 
         for (int i = 0; i < populationSize && i < cars.Count; i++)
@@ -544,7 +544,9 @@ public class Manager : MonoBehaviour
 
             frame.Positions[i] = new Vector2(car.transform.position.x, car.transform.position.z);
             frame.Headings[i] = car.transform.eulerAngles.y;
-            frame.Active[i] = car.active;
+            frame.States[i] = car.active
+                ? TrainingRecording.AgentState.Driving
+                : TrainingRecording.AgentState.Crashed;
         }
 
         recordingGeneration.Frames.Add(frame);
