@@ -66,6 +66,8 @@ public static class BuildWebDemoScene
 
         ApplyBrowserTuning(manager);
         ConfigureCameraForSmallScreens();
+        LayOutCoverageCells();
+        PositionHud();
 
         bool saved = EditorSceneManager.SaveScene(scene, OutputScene, true);
         if (!saved)
@@ -152,6 +154,99 @@ public static class BuildWebDemoScene
         {
             resolution.enabled = false;
         }
+    }
+
+    /// <summary>
+    /// Spreads the coverage cells over the whole city.
+    ///
+    /// The scene holds a hundred cells laid out for a smaller city, so against the
+    /// 13x13 grid the green "visited" overlay only covered a corner and read as a
+    /// bug. Large City is left alone; this only reshapes the web demo's copy.
+    /// </summary>
+    private static void LayOutCoverageCells()
+    {
+        var grid = Object.FindFirstObjectByType<GridWithParams>();
+        var cells = Object.FindObjectsByType<Cell>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+
+        if (grid == null || grid.parameters == null || cells.Length == 0)
+        {
+            Debug.LogWarning("[WebDemo] no grid or cells found; leaving coverage overlay alone.");
+            return;
+        }
+
+        int perSide = Mathf.RoundToInt(Mathf.Sqrt(cells.Length));
+        if (perSide * perSide != cells.Length)
+        {
+            Debug.LogWarning($"[WebDemo] {cells.Length} cells is not a square number; " +
+                             "leaving the coverage overlay alone.");
+            return;
+        }
+
+        // Buildings sit every shapeWidth * margin units, spanning (count - 1) of
+        // those. Add one spacing so the cells cover the outer edges too.
+        float spacing = grid.parameters.shapeWidth * grid.parameters.marginBetweenShapes.x;
+        float span = (grid.parameters.width - 1) * spacing + spacing;
+        float cellSize = span / perSide;
+
+        Vector3 origin = grid.transform.position - new Vector3(spacing * 0.5f, 0f, spacing * 0.5f);
+
+        for (int i = 0; i < cells.Length; i++)
+        {
+            int row = i / perSide;
+            int col = i % perSide;
+            Transform t = cells[i].transform;
+
+            t.position = new Vector3(
+                origin.x + (col + 0.5f) * cellSize,
+                t.position.y,
+                origin.z + (row + 0.5f) * cellSize);
+
+            // Cell art is a unit cube, so scale maps directly to world size.
+            t.localScale = new Vector3(cellSize, t.localScale.y, cellSize);
+        }
+
+        Debug.Log($"[WebDemo] coverage cells: {perSide}x{perSide} of {cellSize:F0} units " +
+                  $"across {span:F0} units of city");
+    }
+
+    /// <summary>
+    /// Moves the stats readout into the top left instead of printing it across the
+    /// middle of the city, which was unreadable on a narrow screen.
+    /// </summary>
+    private static void PositionHud()
+    {
+        var label = Object.FindFirstObjectByType<SetText>();
+        if (label == null)
+        {
+            Debug.LogWarning("[WebDemo] no SetText in the scene; HUD left as it is.");
+            return;
+        }
+
+        var rect = label.GetComponent<RectTransform>();
+        if (rect == null)
+        {
+            return;
+        }
+
+        rect.anchorMin = new Vector2(0f, 1f);
+        rect.anchorMax = new Vector2(0f, 1f);
+        rect.pivot = new Vector2(0f, 1f);
+        rect.anchoredPosition = new Vector2(24f, -24f);
+        rect.sizeDelta = new Vector2(420f, 220f);
+
+        var text = label.GetComponent<TMPro.TextMeshProUGUI>();
+        if (text != null)
+        {
+            text.alignment = TMPro.TextAlignmentOptions.TopLeft;
+            text.textWrappingMode = TMPro.TextWrappingModes.NoWrap;
+            // The city behind is mid grey and varies, so give the text its own
+            // contrast rather than relying on whatever it happens to sit over.
+            text.color = Color.white;
+            text.outlineWidth = 0.2f;
+            text.outlineColor = new Color32(0, 0, 0, 200);
+        }
+
+        Debug.Log("[WebDemo] HUD anchored to the top left");
     }
 
     private static void AddToBuildSettings()

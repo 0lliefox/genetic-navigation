@@ -25,7 +25,8 @@ public class SetText : MonoBehaviour
     /// the whole string. Unscaled time is used so the refresh rate stays the same
     /// however fast the simulation is running.
     /// </summary>
-    public void SetInfoText(string generation, string fitness, double timeElapsed, int numberOfGoals)
+    public void SetInfoText(string generation, string fitness, double timeElapsed, int numberOfGoals,
+                            bool replaying = false)
     {
         if (label == null || Time.unscaledTime < nextRefreshTime)
         {
@@ -37,12 +38,17 @@ public class SetText : MonoBehaviour
         TimeSpan time = TimeSpan.FromSeconds(timeElapsed);
         string str = time.ToString(@"hh\:mm\:ss\:fff");
 
-        string text =
-            $"<b><size=150%>Genetic Algorithm Demonstration</size></b>\r\n\r\n" +
-            $"<b>Current Generation:</b> {generation}\r\n" +
-            $"<b>Last Max Fitness:</b> {fitness}\r\n" +
-            $"<b>Time Elapsed:</b> {str}\r\n" +
-            $"<b>No. of Goals:</b> {numberOfGoals}\r\n";
+        // Generation and fitness only mean something while evolving. In replay the
+        // network is fixed, so reporting them would just show zeros.
+        string text = replaying
+            ? $"<b><size=130%>Trained agents</size></b>\r\n\r\n" +
+              $"<b>Goals reached:</b> {numberOfGoals}\r\n" +
+              $"<b>Running for:</b> {str}\r\n"
+            : $"<b><size=130%>Evolving from scratch</size></b>\r\n\r\n" +
+              $"<b>Generation:</b> {generation}\r\n" +
+              $"<b>Best fitness:</b> {fitness}\r\n" +
+              $"<b>Goals reached:</b> {numberOfGoals}\r\n" +
+              $"<b>Running for:</b> {str}\r\n";
 
         if (text == lastText)
         {

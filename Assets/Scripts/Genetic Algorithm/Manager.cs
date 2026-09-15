@@ -61,6 +61,16 @@ public class Manager : MonoBehaviour
         "efficiency term in the goal fitness discriminates usefully between successful agents.")]
     private bool logGenerationStats = true;
 
+    [Header("Replay")]
+    [SerializeField, Tooltip("A network saved from a training run. Required for replay mode.")]
+    private TextAsset trainedNetwork;
+    [SerializeField, Tooltip("Run the trained network instead of evolving a new one. " +
+        "No selection or mutation happens in this mode.")]
+    private bool replayTrainedNetwork = false;
+
+    public bool IsReplaying => replayTrainedNetwork;
+    public bool HasTrainedNetwork => trainedNetwork != null;
+
     [Header("Training Output")]
     [SerializeField, Tooltip("Write the best network to persistentDataPath as training runs. " +
         "Also enabled by passing -train on the command line.")]
@@ -103,6 +113,14 @@ public class Manager : MonoBehaviour
             else if (args[i] == "-maxSteps" && int.TryParse(args[i + 1], out int steps))
             {
                 maxStepCount = steps;
+            }
+            else if (args[i] == "-mutationChance" && float.TryParse(args[i + 1], out float chance))
+            {
+                MutationChance = chance;
+            }
+            else if (args[i] == "-mutationStrength" && float.TryParse(args[i + 1], out float strength))
+            {
+                MutationStrength = strength;
             }
         }
 
@@ -154,7 +172,8 @@ public class Manager : MonoBehaviour
             currentGeneration.ToString(),
             (runningAverageFitness.Count > 0) ? runningAverageFitness[runningAverageFitness.Count - 1].ToString() : runningAverageFitness.Count.ToString(),
             timeSinceStart,
-            numberOfGoals);
+            numberOfGoals,
+            replayTrainedNetwork);
     }
 
     public void SaveRun(string path)//this is used for saving the biases and weights within the network to a file.
@@ -229,10 +248,40 @@ public class Manager : MonoBehaviour
     {
         numberOfGoals = 0;
         networks = new List<NeuralNetwork>();
+
+        // Replay mode gives every agent the same trained network. They still
+        // diverge, because each spawns at a slightly different moment and the goal
+        // moves as it is reached, so the result is a group of competent drivers
+        // rather than a single one repeated.
+        string trained = null;
+        if (replayTrainedNetwork)
+        {
+            if (trainedNetwork == null)
+            {
+                Debug.LogWarning("Replay mode is on but no trained network is assigned; " +
+                                 "falling back to training from scratch.");
+                replayTrainedNetwork = false;
+            }
+            else
+            {
+                trained = trainedNetwork.text;
+            }
+        }
+
         for (int i = 0; i < populationSize; i++)
         {
             layers[0] = CarController.LAYERS;
             NeuralNetwork net = new NeuralNetwork(layers, i);
+
+            if (trained != null && !net.LoadFrom(trained, trainedNetwork.name))
+            {
+                // LoadFrom has already said why. Random weights are a poor demo, so
+                // make the failure obvious rather than quietly showing noise.
+                Debug.LogError("Trained network could not be loaded; showing untrained agents.");
+                replayTrainedNetwork = false;
+                trained = null;
+            }
+
             //net.Load("Assets/Save/Save-MC-0.5000001MS0.635-Layers3-PopSize100-MC0.1-MS0.5-HMTrue-RNDFalse0.25-RndGrid100-Layers18-Breadcrumbs(True)-FFF7-RESETGOAL75timeframeRESETALL-100pop.txt");//on start load the network save
             networks.Add(net); 
         }
@@ -291,6 +340,13 @@ public class Manager : MonoBehaviour
 
     public void SortNetworks() 
     {   
+        // Replay mode is a demonstration, not a search: keep every agent on the
+        // trained weights rather than selecting and mutating away from them.
+        if (replayTrainedNetwork)
+        {
+            return;
+        }
+
         networks.Sort();
 
         LogGenerationStats();
@@ -564,4 +620,51 @@ public class Manager : MonoBehaviour
             CheckMutationCounter = 0;
         }
     }
+    /// <summary>Switches between watching the trained network and evolving a new one.</summary>
+    public void SetReplayMode(bool replay)
+    {
+        if (replay && trainedNetwork == null)
+        {
+            Debug.LogWarning("No trained network assigned; staying in training mode.");
+            return;
+        }
+
+        if (replay == replayTrainedNetwork)
+        {
+            return;
+        }
+
+        replayTrainedNetwork = replay;
+        RestartRun();
+    }
+
+    /// <summary>Clears the current population and starts again in the current mode.</summary>
+    public void RestartRun()
+    {
+        CancelInvoke();
+        StopAllCoroutines();
+
+        if (cars != null)
+        {
+            for (int i = 0; i < cars.Count; i++)
+            {
+                if (cars[i] != null)
+                {
+                    Destroy(cars[i].gameObject);
+                }
+            }
+            cars = null;
+        }
+
+        currentGeneration = 0;
+        currentStepCount = 0;
+        resetStepCounter = 0;
+        bestFitnessSeen = float.NegativeInfinity;
+        MutationChance = startingMutationChance;
+        MutationStrength = startingMutationStrength;
+
+        RunAlgorithm();
+    }
+
+
 }
