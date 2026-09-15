@@ -328,10 +328,16 @@ public static class BuildWebDemoScene
 
         // Method groups on the component, not lambdas: a persistent listener has to
         // serialise a target object and a method name, and a closure has neither.
+        var switcher = Object.FindFirstObjectByType<DemoSceneSwitch>()
+                       ?? new GameObject("DemoSceneSwitch").AddComponent<DemoSceneSwitch>();
+
         MakeButton(canvas.transform, "Watch it learn", new Vector2(28f, 110f),
                    playback.ShowProgression);
-        MakeButton(canvas.transform, "Best agent", new Vector2(218f, 110f),
+        MakeButton(canvas.transform, "Best moment", new Vector2(218f, 110f),
                    playback.ShowBestGeneration);
+        // The live scene is where the city can actually be changed.
+        MakeButton(canvas.transform, "Drive it live", new Vector2(408f, 110f),
+                   switcher.ShowLiveAgent);
     }
 
     private static void MakeButton(Transform parent, string label, Vector2 position, UnityAction onClick)
