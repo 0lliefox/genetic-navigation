@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -28,6 +28,20 @@ public class CarController : MonoBehaviour
 
     [Header("Network Options")]
     [SerializeField] public static int LAYERS = 18;
+
+    // Layout of the `sensors` array. Each of RayDirections rays writes into three
+    // banks - wall, goal, breadcrumb - followed by six scalar inputs (velocity x/z,
+    // distance to target, direction to target x/y/z). Named so the banks cannot
+    // drift apart again the way the goal-visibility test below once did.
+    private const int RayDirections = 4;
+    private const int WallSensorOffset = 0;
+    private const int GoalSensorOffset = RayDirections;
+    private const int BreadcrumbSensorOffset = RayDirections * 2;
+    private const int ScalarSensorOffset = RayDirections * 3;
+
+    // An agent that has moved less than this has not meaningfully navigated
+    // anywhere. Used only to stop the goal fitness dividing by zero.
+    private const float MinimumTravelDistance = 1f;
 
     [Header("Environment")]
     private GameObject target;
@@ -195,7 +209,6 @@ public class CarController : MonoBehaviour
             float[] ouput = network.FeedForward(sensors);
             MoveCar(ouput);
 
-            lastPosition = transform.position;
             UpdateFitness();
 
             if (leaveBreadcrumbs)
@@ -258,18 +271,27 @@ public class CarController : MonoBehaviour
 
         float maxDistance = 50;
 
+        // The sensor offsets above assume this many rays; fail loudly rather than
+        // silently writing banks on top of each other if the list ever changes.
+        if (raycasts.Count != RayDirections)
+        {
+            Debug.LogError($"InputSensors expects {RayDirections} ray directions but got " +
+                           $"{raycasts.Count}; sensor layout constants are out of date.");
+            return;
+        }
+
         // WALL 
         for (int i = 0; i < raycasts.Count; i++) {
             Ray r = new Ray(transform.position, raycasts[i]);
             if (Physics.Raycast(r, out RaycastHit hit, maxDistance, LayerMask.GetMask("Goal", "Wall")) && hit.transform.CompareTag("Wall"))
             {
                 //sensors[i] = (maxDistance - hit.distance) / maxDistance;
-                sensors[i] = hit.distance;
+                sensors[WallSensorOffset + i] = hit.distance;
                 Debug.DrawLine(r.origin, hit.point, Color.red);
             }
             else
             {
-                sensors[i] = 0;
+                sensors[WallSensorOffset + i] = 0;
             }
         }
 
@@ -279,12 +301,12 @@ public class CarController : MonoBehaviour
             Ray r = new Ray(transform.position, raycasts[i]);
             if (Physics.Raycast(r, out RaycastHit hit, maxDistance, LayerMask.GetMask("Goal", "Wall")) && hit.transform.CompareTag("Goal")) // Make sure it doesn't look through walls to see goal
             {
-                sensors[i + raycasts.Count] = hit.distance; 
+                sensors[GoalSensorOffset + i] = hit.distance; 
                 Debug.DrawLine(r.origin, hit.point, Color.yellow);
             }
             else
             {
-                sensors[i + raycasts.Count] = 0;
+                sensors[GoalSensorOffset + i] = 0;
             }
         }
 
@@ -294,26 +316,26 @@ public class CarController : MonoBehaviour
             Ray r = new Ray(transform.position, raycasts[i]);
             if (Physics.Raycast(r, out RaycastHit hit, maxDistance, LayerMask.GetMask("Goal", "Wall", "Breadcrumb")) && hit.transform.CompareTag("Breadcrumb"))
             {
-                sensors[i + raycasts.Count * 2] = hit.distance;
+                sensors[BreadcrumbSensorOffset + i] = hit.distance;
                 Debug.DrawLine(r.origin, hit.point, Color.blue);
             }
             else
             {
-                sensors[i + raycasts.Count * 2] = 0;
+                sensors[BreadcrumbSensorOffset + i] = 0;
             }
         }
 
         // velocity
-        sensors[raycasts.Count * 3] = rbd.linearVelocity.x;
-        sensors[raycasts.Count * 3 + 1] = rbd.linearVelocity.z;
+        sensors[ScalarSensorOffset + 0] = rbd.linearVelocity.x;
+        sensors[ScalarSensorOffset + 1] = rbd.linearVelocity.z;
 
         // distance to target
-        sensors[raycasts.Count * 3 + 2] = Vector3.Distance(transform.localPosition, target.transform.localPosition);
+        sensors[ScalarSensorOffset + 2] = Vector3.Distance(transform.localPosition, target.transform.localPosition);
 
         // direction to target
-        sensors[raycasts.Count * 3 + 3] = (target.transform.position - transform.position).normalized.x;
-        sensors[raycasts.Count * 3 + 4] = (target.transform.position - transform.position).normalized.y;
-        sensors[raycasts.Count * 3 + 5] = (target.transform.position - transform.position).normalized.z;
+        sensors[ScalarSensorOffset + 3] = (target.transform.position - transform.position).normalized.x;
+        sensors[ScalarSensorOffset + 4] = (target.transform.position - transform.position).normalized.y;
+        sensors[ScalarSensorOffset + 5] = (target.transform.position - transform.position).normalized.z;
 
         //sensors[raycasts.Count + 6] = transform.position.x;
         //sensors[raycasts.Count + 7] = transform.position.y;
@@ -371,19 +393,47 @@ public class CarController : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// True when any of the goal rays currently has a hit.
+    ///
+    /// This previously read sensors[5..8], which missed goal ray 0 and instead
+    /// included the first breadcrumb ray - so the "can see the goal" term of the
+    /// fitness function was partly wired to breadcrumbs. Left over from an earlier
+    /// nine-ray layout (see the commented block in InputSensors).
+    /// </summary>
+    private bool CanSeeGoal()
+    {
+        for (int i = 0; i < RayDirections; i++)
+        {
+            if (sensors[GoalSensorOffset + i] != 0f)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public void UpdateFitness()
     {
-        totalDistanceTravelled += Vector3.Distance(transform.position, lastPosition);
-        geneticManager.totalDistanceCovered += totalDistanceTravelled;
+        // Measure the step before advancing the reference point. The original
+        // assigned lastPosition immediately before calling this, so the distance
+        // below was always exactly zero - which made totalDistanceTravelled stay
+        // at zero and the goal fitness divide by it, yielding Infinity.
+        float stepDistance = Vector3.Distance(transform.position, lastPosition);
+        lastPosition = transform.position;
+
+        totalDistanceTravelled += stepDistance;
+        geneticManager.totalDistanceCovered += stepDistance;
 
         float distanceToTarget = Vector3.Distance(transform.localPosition, target.transform.localPosition);
         if (reachedGoal)
         {
-            fitness = (float)(20 + (100 / Math.Pow(totalDistanceTravelled, 2)));
+            double travelled = Math.Max(totalDistanceTravelled, MinimumTravelDistance);
+            fitness = (float)(20 + (100 / Math.Pow(travelled, 2)));
         }
         else
         {
-            bool canSeeGoal = sensors[5] != 0 || sensors[6] != 0 || sensors[7] != 0 || sensors[8] != 0;
+            bool canSeeGoal = CanSeeGoal();
             fitness = (float)(1 / Math.Pow(distanceToTarget + (canSeeGoal ? 0 : 10) + 0.001 * numOfCollisions, 2)); // F7
 
             //fitness = (float)(10 / Math.Pow(distanceToTarget, 2)); //F1
