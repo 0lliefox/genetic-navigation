@@ -29,17 +29,16 @@ public class RecordingPlayback : MonoBehaviour
     [SerializeField] private Transform goalMarker;
     [SerializeField] private SetText hud;
 
-    [SerializeField, Tooltip("Recorded frames per second. The recorder samples at 10Hz.")]
-    private float playbackFps = 10f;
-    [SerializeField, Tooltip("Seconds to hold on each generation before moving to the next.")]
-    private float secondsPerGeneration = 8f;
+    [SerializeField, Tooltip("Recorded frames replayed per second. The recorder samples at " +
+        "10Hz, so 10 is real time. A generation is 750 frames, which is 75 seconds of " +
+        "recording, so this is set higher to show a whole generation in a watchable span.")]
+    private float playbackFps = 75f;
     [SerializeField] private float agentHeight = 2.5f;
 
     private TrainingRecording.Recording recording;
     private Transform[] agents;
     private int currentGeneration;
     private float frameCursor;
-    private float generationTimer;
 
     public int GenerationCount => recording?.Generations.Count ?? 0;
     public int CurrentGenerationNumber =>
@@ -110,7 +109,6 @@ public class RecordingPlayback : MonoBehaviour
         mode = Mode.Progression;
         currentGeneration = 0;
         frameCursor = 0f;
-        generationTimer = 0f;
     }
 
     /// <summary>Loop the generation that did best, so it can be watched properly.</summary>
@@ -120,7 +118,6 @@ public class RecordingPlayback : MonoBehaviour
         mode = Mode.SingleGeneration;
         currentGeneration = BestGenerationIndex();
         frameCursor = 0f;
-        generationTimer = 0f;
     }
 
     private void CreateAgents()
@@ -162,27 +159,16 @@ public class RecordingPlayback : MonoBehaviour
 
         frameCursor += Time.deltaTime * playbackFps;
 
+        // Play each generation right through. There used to be a wall clock timer
+        // that moved on after a few seconds, which only ever showed the opening of
+        // a generation: that is the stretch where agents are still spawning, so
+        // most of the population had not appeared yet and the city looked empty.
         if (frameCursor >= generation.Frames.Count - 1)
         {
             frameCursor = 0f;
 
             if (mode == Mode.Progression)
             {
-                generationTimer = 0f;
-                currentGeneration = (currentGeneration + 1) % recording.Generations.Count;
-                generation = recording.Generations[currentGeneration];
-            }
-        }
-
-        // Hold on a generation for a fixed wall clock time so short recordings do
-        // not flash past, then move on.
-        if (mode == Mode.Progression)
-        {
-            generationTimer += Time.deltaTime;
-            if (generationTimer >= secondsPerGeneration)
-            {
-                generationTimer = 0f;
-                frameCursor = 0f;
                 currentGeneration = (currentGeneration + 1) % recording.Generations.Count;
                 generation = recording.Generations[currentGeneration];
             }

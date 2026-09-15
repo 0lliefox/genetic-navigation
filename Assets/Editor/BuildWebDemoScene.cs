@@ -356,7 +356,9 @@ public static class BuildWebDemoScene
 
         // Persistent, so the wiring survives into the built scene rather than
         // being a runtime-only listener that a scene save would not capture.
-        UnityEditor.Events.UnityEventTools.AddPersistentListener(button.onClick, onClick);
+        // Void specifically: the plain AddPersistentListener leaves the call mode as
+        // EventDefined, which does not invoke a parameterless method.
+        UnityEditor.Events.UnityEventTools.AddVoidPersistentListener(button.onClick, onClick);
 
         var textGo = new GameObject("Label", typeof(RectTransform));
         textGo.transform.SetParent(go.transform, false);
