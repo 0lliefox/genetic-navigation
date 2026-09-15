@@ -4,9 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Xml;
-using UnityEditor.ShaderGraph;
 using UnityEngine;
-using static UnityEngine.GraphicsBuffer;
 using Random = UnityEngine.Random;
 
 [RequireComponent(typeof(NeuralNetwork))]

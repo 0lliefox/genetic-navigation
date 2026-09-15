@@ -1,8 +1,6 @@
 using System.Collections.Generic;
 using System;
 using System.IO;
-using System.Diagnostics;
-using Grpc.Core;
 
 public class NeuralNetwork : IComparable<NeuralNetwork>
 {

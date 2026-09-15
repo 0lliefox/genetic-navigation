@@ -2,10 +2,8 @@ using System.Collections.Generic;
 using UnityEngine.UIElements;
 using UnityEngine;
 using System.Collections;
-using System.Drawing;
 using System.Linq;
 using System.IO;
-using Unity.Burst.Intrinsics;
 
 public class Manager : MonoBehaviour 
 {
