@@ -40,6 +40,10 @@ public class CarController : MonoBehaviour
     // anywhere. Used only to stop the goal fitness dividing by zero.
     private const float MinimumTravelDistance = 1f;
 
+    // Credit per goal reached, on top of the best the agent managed. Matches the
+    // scale of the goal branch of the fitness function below.
+    private const float GoalReward = 20f;
+
     // LayerMask.GetMask does a string lookup. It was being called twelve times per
     // agent per physics step; the masks never change, so resolve them once.
     private static readonly int SolidMask = LayerMask.GetMask("Goal", "Wall");
@@ -56,6 +60,7 @@ public class CarController : MonoBehaviour
 
     private Vector3 lastPosition;
     private float totalDistanceTravelled = 0;
+    private float bestEpisodeFitness = 0f;
     private float avgSpeed;
     [SerializeField] private float numOfCollisions = 0;
 
@@ -76,6 +81,7 @@ public class CarController : MonoBehaviour
         startRotation = transform.eulerAngles;
         lastPosition = startPosition;
         totalDistanceTravelled = 0f;
+        bestEpisodeFitness = 0f;
         numOfCollisions = 0f;
         reachedGoal = false;
         collided = false;
@@ -115,6 +121,14 @@ public class CarController : MonoBehaviour
 
             geneticManager.numberOfGoals += 1;
             numberOfGoalsReached += 1;
+
+            // The target has moved, so this agent has not reached the new one.
+            // Credit for the goal already banked in bestEpisodeFitness and in
+            // numberOfGoalsReached above.
+            if (randomiseGoalPosition)
+            {
+                reachedGoal = false;
+            }
 
         }
         if (other.CompareTag("Wall"))
@@ -459,7 +473,17 @@ public class CarController : MonoBehaviour
             //fitness = (float)(10 / Math.Pow(distanceToTarget, 2)) - (float)Math.Pow(0.001 * numOfCollisions, distanceToTarget);  // F5
             //fitness = (float)(1 / Math.Pow(distanceToTarget + (canSeeGoal ? 0 : 10), 2)); // F6
         }
-        network.fitness = fitness;
+        // Score the whole episode, not the instant it ended. This used to assign
+        // the current value every step, so an agent was judged purely on where it
+        // happened to be when it last updated: one that navigated well then
+        // drifted scored badly, and one that parked beside the goal scored well.
+        // That is what taught agents to hover near the goal instead of entering it.
+        if (fitness > bestEpisodeFitness)
+        {
+            bestEpisodeFitness = fitness;
+        }
+
+        network.fitness = bestEpisodeFitness + GoalReward * numberOfGoalsReached;
 
         if (geneticManager.maximumFitness < fitness)
         {

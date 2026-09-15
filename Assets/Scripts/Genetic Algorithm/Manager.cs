@@ -77,6 +77,13 @@ public class Manager : MonoBehaviour
     private bool saveTrainedNetworks = false;
     private float bestFitnessSeen = float.NegativeInfinity;
 
+    // Set with -seed. The grid seeds the global RNG from its own parameters at
+    // Start, and the starting weights are drawn from that same stream, so without
+    // this every run of a given build produces byte-identical results. Outcomes
+    // vary enormously between seeds, so running several is worth more than running
+    // one for longer.
+    private int runSeed = int.MinValue;
+
     public List<NeuralNetwork> networks;
     private List<CarController> cars; 
 
@@ -121,6 +128,10 @@ public class Manager : MonoBehaviour
             else if (args[i] == "-mutationStrength" && float.TryParse(args[i + 1], out float strength))
             {
                 MutationStrength = strength;
+            }
+            else if (args[i] == "-seed" && int.TryParse(args[i + 1], out int seed))
+            {
+                runSeed = seed;
             }
         }
 
@@ -266,6 +277,13 @@ public class Manager : MonoBehaviour
             {
                 trained = trainedNetwork.text;
             }
+        }
+
+        // Re-seed immediately before drawing the weights, so this does not depend on
+        // whether Manager.Start or GridWithParams.Start happened to run first.
+        if (runSeed != int.MinValue)
+        {
+            Random.InitState(runSeed);
         }
 
         for (int i = 0; i < populationSize; i++)
@@ -434,13 +452,14 @@ public class Manager : MonoBehaviour
         NeuralNetwork best = networks[networks.Count - 1];
         string serialised = best.Serialise(numberOfGoals);
 
-        File.WriteAllText(Path.Combine(Application.persistentDataPath, "latest-network.txt"), serialised);
+        string tag = runSeed == int.MinValue ? "" : $"-seed{runSeed}";
+        File.WriteAllText(Path.Combine(Application.persistentDataPath, $"latest-network{tag}.txt"), serialised);
 
         if (best.fitness > bestFitnessSeen)
         {
             bestFitnessSeen = best.fitness;
-            File.WriteAllText(Path.Combine(Application.persistentDataPath, "best-network.txt"), serialised);
-            Debug.Log($"[Train] gen {currentGeneration}: new best fitness {best.fitness:G6}, " +
+            File.WriteAllText(Path.Combine(Application.persistentDataPath, $"best-network{tag}.txt"), serialised);
+            Debug.Log($"[Train] seed {runSeed} gen {currentGeneration}: new best fitness {best.fitness:G6}, " +
                       $"goals so far {numberOfGoals}");
         }
 #endif
